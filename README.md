@@ -1,6 +1,6 @@
 # 🤖 Trading Agents - Sistema Multi-Agente de Análisis Financiero
 
-![texto del vínculo](https://img.freepik.com/fotos-premium/retrato-ai-generando-banner-concepto-tecnologia-futura-contenido_310913-1658.jpg)
+![texto del vínculo](https://static.comunicae.com/photos/notas/1247100/mejor-robot-de-forex-1024x536.jpg)
 
 Un sistema avanzado de análisis financiero que utiliza múltiples agentes de IA especializados para proporcionar análisis completos y decisiones de inversión informadas. Compatible con **criptomonedas**, **acciones** e **índices**.
 
