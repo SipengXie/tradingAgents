@@ -50,8 +50,11 @@ class ConditionalLogic:
             state["investment_debate_state"]["count"] >= 2 * self.max_debate_rounds
         ):  # 3 rounds of back-and-forth between 2 agents
             return "Research Manager"
-        if state["investment_debate_state"]["current_response"].startswith("Bull"):
+        current_response = state["investment_debate_state"]["current_response"]
+        if current_response.startswith("Bull") or current_response.startswith("Analista Optimista"):
             return "Bear Researcher"
+        elif current_response.startswith("Bear") or current_response.startswith("Analista Pesimista"):
+            return "Bull Researcher"
         return "Bull Researcher"
 
     def should_continue_risk_analysis(self, state: AgentState) -> str:
@@ -60,8 +63,11 @@ class ConditionalLogic:
             state["risk_debate_state"]["count"] >= 3 * self.max_risk_discuss_rounds
         ):  # 3 rounds of back-and-forth between 3 agents
             return "Risk Judge"
-        if state["risk_debate_state"]["latest_speaker"].startswith("Risky"):
+        latest_speaker = state["risk_debate_state"]["latest_speaker"]
+        if latest_speaker.startswith("Risky") or latest_speaker.startswith("Analista Agresivo"):
             return "Safe Analyst"
-        if state["risk_debate_state"]["latest_speaker"].startswith("Safe"):
+        if latest_speaker.startswith("Safe") or latest_speaker.startswith("Analista Conservador"):
             return "Neutral Analyst"
+        if latest_speaker.startswith("Neutral") or latest_speaker.startswith("Analista Neutral"):
+            return "Risky Analyst"
         return "Risky Analyst"

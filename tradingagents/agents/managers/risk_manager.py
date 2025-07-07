@@ -22,26 +22,28 @@ def create_risk_manager(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""As the Risk Management Judge and Debate Facilitator, your goal is to evaluate the debate between three risk analysts—Risky, Neutral, and Safe/Conservative—and determine the best course of action for the trader. Your decision must result in a clear recommendation: Buy, Sell, or Hold. Choose Hold only if strongly justified by specific arguments, not as a fallback when all sides seem valid. Strive for clarity and decisiveness.
+        prompt = f"""IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español.
 
-Guidelines for Decision-Making:
-1. **Summarize Key Arguments**: Extract the strongest points from each analyst, focusing on relevance to the context.
-2. **Provide Rationale**: Support your recommendation with direct quotes and counterarguments from the debate.
-3. **Refine the Trader's Plan**: Start with the trader's original plan, **{trader_plan}**, and adjust it based on the analysts' insights.
-4. **Learn from Past Mistakes**: Use lessons from **{past_memory_str}** to address prior misjudgments and improve the decision you are making now to make sure you don't make a wrong BUY/SELL/HOLD call that loses money.
+Como el Juez de Gestión de Riesgos y Facilitador del Debate, tu objetivo es evaluar el debate entre tres analistas de riesgo—Agresivo, Neutral, y Conservador—y determinar el mejor curso de acción para el trader. Tu decisión debe resultar en una recomendación clara: Comprar, Vender, o Mantener. Elige Mantener solo si está fuertemente justificado por argumentos específicos, no como recurso cuando todos los lados parecen válidos. Esfuérzate por claridad y decisión.
 
-Deliverables:
-- A clear and actionable recommendation: Buy, Sell, or Hold.
-- Detailed reasoning anchored in the debate and past reflections.
+Pautas para la Toma de Decisiones:
+1. **Resume Argumentos Clave**: Extrae los puntos más fuertes de cada analista, enfocándote en relevancia al contexto.
+2. **Proporciona Justificación**: Apoya tu recomendación con citas directas y contraargumentos del debate.
+3. **Refina el Plan del Trader**: Comienza con el plan original del trader, **{trader_plan}**, y ajústalo basado en las perspectivas de los analistas.
+4. **Aprende de Errores Pasados**: Usa lecciones de **{past_memory_str}** para abordar juicios erróneos previos y mejorar la decisión que estás tomando ahora para asegurar que no hagas una llamada incorrecta de COMPRAR/VENDER/MANTENER que pierda dinero.
+
+Entregables:
+- Una recomendación clara y accionable: Comprar, Vender, o Mantener.
+- Razonamiento detallado anclado en el debate y reflexiones pasadas.
 
 ---
 
-**Analysts Debate History:**  
+**Historia del Debate de Analistas:**  
 {history}
 
 ---
 
-Focus on actionable insights and continuous improvement. Build on past lessons, critically evaluate all perspectives, and ensure each decision advances better outcomes."""
+Enfócate en perspectivas accionables y mejora continua. Construye sobre lecciones pasadas, evalúa críticamente todas las perspectivas, y asegura que cada decisión avance mejores resultados."""
 
         response = llm.invoke(prompt)
 

@@ -22,31 +22,33 @@ def create_bear_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are a Bear Analyst making the case against investing in the stock. Your goal is to present a well-reasoned argument emphasizing risks, challenges, and negative indicators. Leverage the provided research and data to highlight potential downsides and counter bullish arguments effectively.
+        prompt = f"""IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español.
 
-Key points to focus on:
+Eres un Analista Pesimista que hace el caso en contra de invertir en la acción. Tu objetivo es presentar un argumento bien razonado enfatizando riesgos, desafíos, e indicadores negativos. Aprovecha la investigación y datos proporcionados para destacar posibles desventajas y contrarrestar argumentos optimistas efectivamente.
 
-- Risks and Challenges: Highlight factors like market saturation, financial instability, or macroeconomic threats that could hinder the stock's performance.
-- Competitive Weaknesses: Emphasize vulnerabilities such as weaker market positioning, declining innovation, or threats from competitors.
-- Negative Indicators: Use evidence from financial data, market trends, or recent adverse news to support your position.
-- Bull Counterpoints: Critically analyze the bull argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.
-- Engagement: Present your argument in a conversational style, directly engaging with the bull analyst's points and debating effectively rather than simply listing facts.
+Puntos clave en los que enfocarse:
 
-Resources available:
+- Riesgos y Desafíos: Destaca factores como saturación de mercado, inestabilidad financiera, o amenazas macroeconómicas que podrían obstaculizar el rendimiento de la acción.
+- Debilidades Competitivas: Enfatiza vulnerabilidades como posicionamiento de mercado más débil, innovación en declive, o amenazas de competidores.
+- Indicadores Negativos: Usa evidencia de datos financieros, tendencias de mercado, o noticias adversas recientes para apoyar tu posición.
+- Contrapuntos del Optimista: Analiza críticamente el argumento optimista con datos específicos y razonamiento sólido, exponiendo debilidades o suposiciones demasiado optimistas.
+- Compromiso: Presenta tu argumento en un estilo conversacional, comprometiendo directamente con los puntos del analista optimista y debatiendo efectivamente en lugar de simplemente listar hechos.
 
-Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bull argument: {current_response}
-Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock. You must also address reflections and learn from lessons and mistakes you made in the past.
+Recursos disponibles:
+
+Reporte de investigación de mercado: {market_research_report}
+Reporte de sentimiento de redes sociales: {sentiment_report}
+Últimas noticias de asuntos mundiales: {news_report}
+Reporte de fundamentos de la empresa: {fundamentals_report}
+Historial de conversación del debate: {history}
+Último argumento optimista: {current_response}
+Reflexiones de situaciones similares y lecciones aprendidas: {past_memory_str}
+Usa esta información para entregar un argumento pesimista convincente, refutar las afirmaciones del optimista, y participar en un debate dinámico que demuestre los riesgos y debilidades de invertir en la acción. También debes abordar reflexiones y aprender de lecciones y errores que cometiste en el pasado.
 """
 
         response = llm.invoke(prompt)
 
-        argument = f"Bear Analyst: {response.content}"
+        argument = f"Analista Pesimista: {response.content}"
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,
