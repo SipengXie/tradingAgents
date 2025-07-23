@@ -5,11 +5,27 @@ from openai import OpenAI
 
 class FinancialSituationMemory:
     def __init__(self, name, config):
-        if config["backend_url"] == "http://localhost:11434/v1":
+        # 设置 embedding 模型
+        if config.get("embedding_url", config["backend_url"]) == "http://localhost:11434/v1":
             self.embedding = "nomic-embed-text"
         else:
-            self.embedding = "text-embedding-3-small"
+            self.embedding = config.get("embedding_model", "BAAI/bge-m3")
+        
+        # 为主 LLM 创建 client
         self.client = OpenAI(base_url=config["backend_url"])
+        
+        # 为 embedding 创建独立的 client
+        embedding_url = config.get("embedding_url", config["backend_url"])
+        embedding_api_key = config.get("embedding_api_key", None)
+        
+        if embedding_api_key:
+            self.embedding_client = OpenAI(
+                base_url=embedding_url,
+                api_key=embedding_api_key
+            )
+        else:
+            self.embedding_client = OpenAI(base_url=embedding_url)
+        
         self.chroma_client = chromadb.Client(Settings(allow_reset=True))
         try:
             self.situation_collection = self.chroma_client.create_collection(name=name)
@@ -28,7 +44,7 @@ class FinancialSituationMemory:
     def get_embedding(self, text):
         """Get OpenAI embedding for a text"""
         
-        response = self.client.embeddings.create(
+        response = self.embedding_client.embeddings.create(
             model=self.embedding, input=text
         )
         return response.data[0].embedding

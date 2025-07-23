@@ -2,92 +2,249 @@ import streamlit as st
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+import requests
+from openai import OpenAI
+import finnhub
 
-# Importar los componentes necesarios del framework de trading
+# 导入交易框架所需的组件
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 
-# --- Configuración de la Página de Streamlit ---
+# API 测试函数
+def test_llm_api(backend_url, api_key, model):
+    """测试 LLM API 是否可用"""
+    try:
+        client = OpenAI(
+            base_url=backend_url,
+            api_key=api_key
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=10
+        )
+        return True, "LLM API 连接成功"
+    except Exception as e:
+        return False, f"LLM API 连接失败: {str(e)}"
+
+def test_embedding_api(embedding_url, api_key, model):
+    """测试 Embedding API 是否可用"""
+    try:
+        client = OpenAI(
+            base_url=embedding_url,
+            api_key=api_key
+        )
+        response = client.embeddings.create(
+            model=model,
+            input="test"
+        )
+        return True, "Embedding API 连接成功"
+    except Exception as e:
+        return False, f"Embedding API 连接失败: {str(e)}"
+
+def test_finnhub_api(api_key):
+    """测试 Finnhub API 是否可用"""
+    try:
+        finnhub_client = finnhub.Client(api_key=api_key)
+        # 测试获取苹果股票报价
+        quote = finnhub_client.quote('AAPL')
+        if quote and 'c' in quote:
+            return True, "Finnhub API 连接成功"
+        else:
+            return False, "Finnhub API 返回数据异常"
+    except Exception as e:
+        return False, f"Finnhub API 连接失败: {str(e)}"
+
+# --- Streamlit 页面配置 ---
 st.set_page_config(
-    page_title="Agente de Trading con IA",
+    page_title="AI 交易助手",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🤖 Agente de Trading con IA para Activos Financieros")
-st.markdown("Esta aplicación utiliza un equipo de agentes de IA para analizar el mercado de Activos y proponer una decisión de trading. Introduce tus claves de API y los parámetros de análisis para comenzar.")
+st.title("🤖 AI 金融资产交易助手")
+st.markdown("该应用使用AI智能体团队分析资产市场并提出交易决策。请输入您的API密钥和分析参数以开始。")
 
-# --- Barra Lateral de Configuración ---
+# 初始化 session state
+if 'api_tested' not in st.session_state:
+    st.session_state.api_tested = False
+    st.session_state.api_test_results = {}
+
+# 在主页面显示 API 状态
+if st.session_state.api_tested and st.session_state.api_test_results:
+    with st.container():
+        st.subheader("📡 API 连接状态")
+        cols = st.columns(3)
+        
+        # LLM 状态
+        with cols[0]:
+            llm_status = st.session_state.api_test_results.get('llm', {})
+            if llm_status.get('success'):
+                st.success("✅ LLM API 正常")
+            else:
+                st.error("❌ LLM API 异常")
+                if llm_status.get('message'):
+                    st.caption(llm_status['message'])
+        
+        # Finnhub 状态
+        with cols[1]:
+            finn_status = st.session_state.api_test_results.get('finnhub', {})
+            if finn_status.get('success'):
+                st.success("✅ Finnhub API 正常")
+            else:
+                st.error("❌ Finnhub API 异常")
+                if finn_status.get('message'):
+                    st.caption(finn_status['message'])
+        
+        # Embedding 状态
+        with cols[2]:
+            embed_status = st.session_state.api_test_results.get('embedding', {})
+            if embed_status.get('success'):
+                st.success("✅ Embedding API 正常")
+            else:
+                st.error("❌ Embedding API 异常")
+                if embed_status.get('message'):
+                    st.caption(embed_status['message'])
+        
+        st.divider()
+
+# --- 侧边栏配置 ---
 with st.sidebar:
-    st.header("🔑 Configuración de APIs")
+    st.header("🔑 API 配置")
     if os.path.exists('.env'):
         load_dotenv()
 
-    openai_api_key = st.text_input("Clave API de OpenAI", type="password", value=os.getenv("OPENAI_API_KEY") or "")
-    finnhub_api_key = st.text_input("Clave API de Finnhub", type="password", value=os.getenv("FINNHUB_API_KEY") or "")
+    openai_api_key = st.text_input("OpenAI API 密钥", type="password", value=os.getenv("OPENAI_API_KEY") or "")
+    finnhub_api_key = st.text_input("Finnhub API 密钥", type="password", value=os.getenv("FINNHUB_API_KEY") or "")
     
-    st.header("⚙️ Parámetros del Agente")
+    # API 测试部分
+    st.header("🔍 API 连接测试")
     
-    # Selección de categoría y activos
+    # 获取配置
+    config = DEFAULT_CONFIG.copy()
+    backend_url = config.get("backend_url", "")
+    embedding_url = config.get("embedding_url", "")
+    embedding_model = config.get("embedding_model", "")
+    embedding_api_key = config.get("embedding_api_key", openai_api_key)
+    
+    # 显示当前配置
+    with st.expander("查看当前配置"):
+        st.text(f"LLM Backend URL: {backend_url}")
+        st.text(f"LLM Model: {config.get('quick_think_llm', 'N/A')}")
+        st.text(f"Embedding URL: {embedding_url}")
+        st.text(f"Embedding Model: {embedding_model}")
+    
+    if st.button("测试 API 连接"):
+        # 清空之前的测试结果
+        st.session_state.api_test_results = {}
+        
+        # 测试 LLM API
+        col1, col2 = st.columns(2)
+        with col1:
+            if openai_api_key and backend_url:
+                llm_success, llm_msg = test_llm_api(backend_url, openai_api_key, config["quick_think_llm"])
+                st.session_state.api_test_results['llm'] = {'success': llm_success, 'message': llm_msg}
+                if llm_success:
+                    st.success(f"✅ {llm_msg}")
+                else:
+                    st.error(f"❌ {llm_msg}")
+            else:
+                st.warning("⚠️ 请先配置 OpenAI API 密钥")
+                st.session_state.api_test_results['llm'] = {'success': False, 'message': "未配置 API 密钥"}
+        
+        with col2:
+            # 测试 Finnhub API
+            if finnhub_api_key:
+                finn_success, finn_msg = test_finnhub_api(finnhub_api_key)
+                st.session_state.api_test_results['finnhub'] = {'success': finn_success, 'message': finn_msg}
+                if finn_success:
+                    st.success(f"✅ {finn_msg}")
+                else:
+                    st.error(f"❌ {finn_msg}")
+            else:
+                st.warning("⚠️ 请先配置 Finnhub API 密钥")
+                st.session_state.api_test_results['finnhub'] = {'success': False, 'message': "未配置 API 密钥"}
+        
+        # 测试 Embedding API
+        if embedding_api_key and embedding_url and embedding_model:
+            embed_success, embed_msg = test_embedding_api(embedding_url, embedding_api_key, embedding_model)
+            st.session_state.api_test_results['embedding'] = {'success': embed_success, 'message': embed_msg}
+            if embed_success:
+                st.success(f"✅ {embed_msg}")
+            else:
+                st.error(f"❌ {embed_msg}")
+        else:
+            st.warning("⚠️ Embedding API 配置不完整")
+            st.session_state.api_test_results['embedding'] = {'success': False, 'message': "配置不完整"}
+        
+        # 标记已测试
+        st.session_state.api_tested = True
+        st.rerun()
+    
+    st.divider()
+    
+    st.header("⚙️ 智能体参数")
+    
+    # 选择资产类别
     asset_category = st.selectbox(
-        "Categoría de Activos", 
-        ["Criptomonedas", "Acciones Tech", "Acciones Blue Chip", "Índices", "Personalizado"]
+        "资产类别", 
+        ["加密货币", "科技股", "蓝筹股", "指数", "自定义"]
     )
     
-    # Definir activos populares por categoría
+    # 定义各类别的热门资产
     popular_assets = {
-        "Criptomonedas": ["BTC-USD", "ETH-USD", "ADA-USD", "SOL-USD", "MATIC-USD", "DOT-USD", "AVAX-USD", "LINK-USD"],
-        "Acciones Tech": ["AAPL", "GOOGL", "MSFT", "TSLA", "NVDA", "META", "AMZN", "NFLX"],
-        "Acciones Blue Chip": ["JPM", "JNJ", "KO", "PG", "WMT", "V", "MA", "DIS"],
-        "Índices": ["SPY", "QQQ", "IWM", "VTI", "GLD", "TLT", "VIX", "DXY"],
-        "Personalizado": []
+        "加密货币": ["BTC-USD", "ETH-USD", "ADA-USD", "SOL-USD", "MATIC-USD", "DOT-USD", "AVAX-USD", "LINK-USD"],
+        "科技股": ["AAPL", "GOOGL", "MSFT", "TSLA", "NVDA", "META", "AMZN", "NFLX"],
+        "蓝筹股": ["JPM", "JNJ", "KO", "PG", "WMT", "V", "MA", "DIS"],
+        "指数": ["SPY", "QQQ", "IWM", "VTI", "GLD", "TLT", "VIX", "DXY"],
+        "自定义": []
     }
     
-    if asset_category == "Personalizado":
-        ticker = st.text_input("Ticker del Activo", "BTC-USD")
-        analysis_mode = st.radio("Modo de Análisis", ["Activo Individual", "Análisis Múltiple"])
+    if asset_category == "自定义":
+        ticker = st.text_input("资产代码", "BTC-USD")
+        analysis_mode = st.radio("分析模式", ["单一资产", "多资产分析"])
         
-        if analysis_mode == "Análisis Múltiple":
+        if analysis_mode == "多资产分析":
             custom_tickers = st.text_area(
-                "Tickers (separados por coma)", 
+                "资产代码（用逗号分隔）", 
                 "BTC-USD, ETH-USD, AAPL, TSLA",
-                help="Ejemplo: BTC-USD, ETH-USD, AAPL, TSLA, GOOGL"
+                help="示例：BTC-USD, ETH-USD, AAPL, TSLA, GOOGL"
             )
             selected_tickers = [t.strip() for t in custom_tickers.split(",") if t.strip()]
         else:
             selected_tickers = [ticker]
     else:
-        analysis_mode = st.radio("Modo de Análisis", ["Activo Individual", "Análisis Múltiple"])
+        analysis_mode = st.radio("分析模式", ["单一资产", "多资产分析"])
         
-        if analysis_mode == "Análisis Múltiple":
+        if analysis_mode == "多资产分析":
             selected_tickers = st.multiselect(
-                "Selecciona Activos para Analizar", 
+                "选择要分析的资产", 
                 popular_assets[asset_category],
                 default=[popular_assets[asset_category][0]]
             )
         else:
-            ticker = st.selectbox("Activo", popular_assets[asset_category])
+            ticker = st.selectbox("资产", popular_assets[asset_category])
             selected_tickers = [ticker]
     
-    analysis_date = st.date_input("Fecha de Análisis", datetime.today())
+    analysis_date = st.date_input("分析日期", datetime.today())
     
-    st.header("🧠 Modelo de Lenguaje (LLM)")
-    llm_provider = st.selectbox("Proveedor de LLM", ["openai", "google", "anthropic"], index=0)
-    deep_think_llm = st.text_input("Modelo Principal (Deep Think)", "gpt-4o")
-    quick_think_llm = st.text_input("Modelo Rápido (Quick Think)", "gpt-4o")
+    st.header("🧠 语言模型 (LLM)")
+    llm_provider = st.selectbox("LLM 提供商", ["openai", "google", "anthropic"], index=0)
+    deep_think_llm = st.text_input("主模型（深度思考）", "gpt-4o")
+    quick_think_llm = st.text_input("快速模型（快速思考）", "gpt-4o")
 
-    run_analysis = st.button(f"🚀 Analizar {'Mercados' if len(selected_tickers) > 1 else 'Mercado'}")
+    run_analysis = st.button(f"🚀 分析{'多个市场' if len(selected_tickers) > 1 else '市场'}")
 
-# --- Área Principal de la Aplicación ---
+# --- 主应用区域 ---
 if run_analysis:
     if not openai_api_key or not finnhub_api_key:
-        st.error("Por favor, introduce tus claves de API de OpenAI y Finnhub en la barra lateral.")
+        st.error("请在侧边栏输入您的 OpenAI 和 Finnhub API 密钥。")
     else:
         os.environ["OPENAI_API_KEY"] = openai_api_key
         os.environ["FINNHUB_API_KEY"] = finnhub_api_key
         
-        # Función para detectar tipo de activo
+        # 检测资产类型的函数
         def detect_asset_type(ticker):
             if ticker.endswith("-USD") or ticker.endswith("-EUR") or ticker.endswith("-USDT"):
                 return "crypto"
@@ -96,21 +253,21 @@ if run_analysis:
             else:
                 return "stock"
         
-        # Función para obtener analistas según tipo de activo
+        # 根据资产类型获取分析师的函数
         def get_analysts_for_asset(asset_type):
             if asset_type == "crypto":
-                return ["market", "social", "news"]  # Sin fundamentals para crypto
+                return ["market", "social", "news"]  # 加密货币不需要基本面分析
             elif asset_type == "index":
-                return ["market", "news"]  # Índices no necesitan social ni fundamentals
+                return ["market", "news"]  # 指数不需要社交和基本面分析
             else:
-                return ["market", "social", "news", "fundamentals"]  # Completo para acciones
+                return ["market", "social", "news", "fundamentals"]  # 股票需要完整分析
         
         if len(selected_tickers) == 1:
-            # Análisis individual
+            # 单一资产分析
             ticker = selected_tickers[0]
             asset_type = detect_asset_type(ticker)
             
-            with st.spinner(f"El equipo de agentes está analizando {ticker} ({asset_type})... Esto puede tardar unos minutos."):
+            with st.spinner(f"AI智能体团队正在分析 {ticker} ({asset_type})... 这可能需要几分钟。"):
                 try:
                     config = DEFAULT_CONFIG.copy()
                     config["llm_provider"] = llm_provider
@@ -118,29 +275,29 @@ if run_analysis:
                     config["quick_think_llm"] = quick_think_llm
                     config["online_tools"] = True
                     config["max_debate_rounds"] = 2
-                    config["language"] = "spanish"
-                    config["language_instruction"] = "IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español."
+                    config["language"] = "english"
+                    config["language_instruction"] = "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。"
 
-                    # Seleccionar analistas según tipo de activo
+                    # 根据资产类型选择分析师
                     selected_analysts = get_analysts_for_asset(asset_type)
                     ta = TradingAgentsGraph(debug=False, config=config, selected_analysts=selected_analysts)
                     formatted_date = analysis_date.strftime("%Y-%m-%d")
                     
                     state, decision = ta.propagate(ticker, formatted_date)
 
-                    st.success(f"Análisis completado para {ticker} ({asset_type}).")
+                    st.success(f"{ticker} ({asset_type}) 分析完成。")
 
-                    # --- SECCIÓN DE DEPURACIÓN ---
-                    with st.expander("🐞 Salida de Depuración"):
-                        st.markdown("**Estado Crudo (`state`):**")
+                    # --- 调试部分 ---
+                    with st.expander("🐞 调试输出"):
+                        st.markdown("**原始状态 (`state`):**")
                         st.write(state)
-                        st.markdown("**Decisión Cruda (`decision`):**")
+                        st.markdown("**原始决策 (`decision`):**")
                         st.write(decision)
-                    # --- FIN DE LA SECCIÓN DE DEPURACIÓN ---
+                    # --- 调试部分结束 ---
 
-                    st.subheader(f"📈 Decisión Final para {ticker}:")
+                    st.subheader(f"📈 {ticker} 的最终决策：")
                     if decision:
-                        # Si la decisión es solo un string (BUY, SELL, HOLD), mostrarla directamente
+                        # 如果决策只是一个字符串 (BUY, SELL, HOLD)，直接显示
                         if isinstance(decision, str):
                             decision_color = {
                                 "BUY": "green",
@@ -151,46 +308,46 @@ if run_analysis:
                         else:
                             st.json(decision)
                     else:
-                        st.warning("El agente no produjo una decisión final.")
+                        st.warning("AI智能体未生成最终决策。")
 
-                    st.subheader("📄 Informes Detallados de los Agentes:")
+                    st.subheader("📄 智能体详细报告：")
                     
-                    with st.expander("🔍 Análisis Técnico de Mercado"):
-                        st.write(state.get("market_report", "No se encontraron resultados."))
+                    with st.expander("🔍 市场技术分析"):
+                        st.write(state.get("market_report", "未找到结果。"))
                     
-                    with st.expander("📱 Análisis de Sentimiento Social"):
-                        st.write(state.get("sentiment_report", "No se encontraron resultados."))
+                    with st.expander("📱 社交情绪分析"):
+                        st.write(state.get("sentiment_report", "未找到结果。"))
                     
-                    with st.expander("📰 Análisis de Noticias"):
-                        st.write(state.get("news_report", "No se encontraron resultados."))
+                    with st.expander("📰 新闻分析"):
+                        st.write(state.get("news_report", "未找到结果。"))
                     
                     if state.get("fundamentals_report"):
-                        with st.expander("📊 Análisis Fundamental"):
-                            st.write(state.get("fundamentals_report", "No disponible para criptomonedas."))
+                        with st.expander("📊 基本面分析"):
+                            st.write(state.get("fundamentals_report", "加密货币不适用。"))
 
-                    with st.expander("⚖️ Debate de Investigadores (Bull vs Bear)"):
+                    with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
                         investment_debate = state.get("investment_debate_state", {})
                         if investment_debate.get("judge_decision"):
                             st.write(investment_debate["judge_decision"])
                         else:
-                            st.write("No se encontraron resultados del debate.")
+                            st.write("未找到辩论结果。")
                     
-                    with st.expander("💼 Propuesta del Trader"):
-                         st.write(state.get("trader_investment_plan", "No se encontraron resultados."))
+                    with st.expander("💼 交易员提案"):
+                         st.write(state.get("trader_investment_plan", "未找到结果。"))
 
-                    with st.expander("🛡️ Evaluación de Gestión de Riesgos"):
+                    with st.expander("🛡️ 风险管理评估"):
                         risk_debate = state.get("risk_debate_state", {})
                         if risk_debate.get("judge_decision"):
                             st.write(risk_debate["judge_decision"])
                         else:
-                            st.write("No se encontraron resultados del análisis de riesgos.")
+                            st.write("未找到风险分析结果。")
 
                 except Exception as e:
-                    st.error(f"Ha ocurrido un error durante el análisis: {e}")
+                    st.error(f"分析过程中出现错误：{e}")
         
         else:
-            # Análisis múltiple
-            st.subheader(f"🔄 Análisis Múltiple de {len(selected_tickers)} Activos")
+            # 多资产分析
+            st.subheader(f"🔄 正在分析 {len(selected_tickers)} 个资产")
             
             results = {}
             progress_bar = st.progress(0)
@@ -198,7 +355,7 @@ if run_analysis:
             
             for i, ticker in enumerate(selected_tickers):
                 asset_type = detect_asset_type(ticker)
-                status_text.text(f"Analizando {ticker} ({asset_type})... {i+1}/{len(selected_tickers)}")
+                status_text.text(f"正在分析 {ticker} ({asset_type})... {i+1}/{len(selected_tickers)}")
                 
                 try:
                     config = DEFAULT_CONFIG.copy()
@@ -206,11 +363,11 @@ if run_analysis:
                     config["deep_think_llm"] = deep_think_llm
                     config["quick_think_llm"] = quick_think_llm
                     config["online_tools"] = True
-                    config["max_debate_rounds"] = 1  # Reducir rounds para análisis múltiple
-                    config["language"] = "spanish"
-                    config["language_instruction"] = "IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español."
+                    config["max_debate_rounds"] = 1  # 为多资产分析减少轮次
+                    config["language"] = "english"
+                    config["language_instruction"] = "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。"
 
-                    # Seleccionar analistas según tipo de activo
+                    # 根据资产类型选择分析师
                     selected_analysts = get_analysts_for_asset(asset_type)
                     ta = TradingAgentsGraph(debug=False, config=config, selected_analysts=selected_analysts)
                     formatted_date = analysis_date.strftime("%Y-%m-%d")
@@ -232,10 +389,10 @@ if run_analysis:
                 
                 progress_bar.progress((i + 1) / len(selected_tickers))
             
-            status_text.text("¡Análisis múltiple completado!")
+            status_text.text("多资产分析完成！")
             
-            # Mostrar resumen de resultados
-            st.subheader("📊 Resumen de Decisiones")
+            # 显示结果摘要
+            st.subheader("📊 决策摘要")
             
             summary_data = []
             for ticker, result in results.items():
@@ -249,44 +406,44 @@ if run_analysis:
                         confidence = "N/A"
                     
                     summary_data.append({
-                        "Activo": ticker,
-                        "Tipo": result["asset_type"],
-                        "Acción": action,
-                        "Confianza": confidence,
-                        "Estado": "✅ Exitoso"
+                        "资产": ticker,
+                        "类型": result["asset_type"],
+                        "操作": action,
+                        "置信度": confidence,
+                        "状态": "✅ 成功"
                     })
                 else:
                     summary_data.append({
-                        "Activo": ticker,
-                        "Tipo": result["asset_type"],
-                        "Acción": "Error",
-                        "Confianza": "N/A",
-                        "Estado": "❌ Error"
+                        "资产": ticker,
+                        "类型": result["asset_type"],
+                        "操作": "Error",
+                        "置信度": "N/A",
+                        "状态": "❌ 错误"
                     })
             
             st.dataframe(summary_data)
             
-            # Mostrar análisis detallado por activo
-            st.subheader("📄 Análisis Detallado por Activo")
+            # 显示每个资产的详细分析
+            st.subheader("📄 各资产详细分析")
             
             for ticker, result in results.items():
                 with st.expander(f"📈 {ticker} ({result['asset_type']})"):
                     if result["status"] == "success":
                         st.json(result["decision"])
                         
-                        st.markdown("**Informes de Agentes:**")
+                        st.markdown("**智能体报告：**")
                         state = result["state"]
                         
-                        with st.expander("🔍 Análisis del Equipo de Analistas"):
-                            st.write(state.get("analyst_team_results", "No se encontraron resultados."))
+                        with st.expander("🔍 分析师团队分析"):
+                            st.write(state.get("analyst_team_results", "未找到结果。"))
 
-                        with st.expander("⚖️ Debate del Equipo de Investigadores"):
-                            st.write(state.get("researcher_team_results", "No se encontraron resultados."))
+                        with st.expander("⚖️ 研究员团队辩论"):
+                            st.write(state.get("researcher_team_results", "未找到结果。"))
                         
-                        with st.expander("💼 Propuesta del Agente Trader"):
-                             st.write(state.get("trader_results", "No se encontraron resultados."))
+                        with st.expander("💼 交易员提案"):
+                             st.write(state.get("trader_results", "未找到结果。"))
 
-                        with st.expander("🛡️ Evaluación del Equipo de Gestión de Riesgos"):
-                            st.write(state.get("risk_management_results", "No se encontraron resultados."))
+                        with st.expander("🛡️ 风险管理团队评估"):
+                            st.write(state.get("risk_management_results", "未找到结果。"))
                     else:
-                        st.error(f"Error al analizar {ticker}: {result['error']}")
+                        st.error(f"分析 {ticker} 时出错：{result['error']}")

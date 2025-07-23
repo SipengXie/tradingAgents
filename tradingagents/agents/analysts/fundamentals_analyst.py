@@ -36,27 +36,27 @@ def create_fundamentals_analyst(llm, toolkit):
         
         if is_crypto:
             system_message = (
-                "IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español.\n\nEres un investigador encargado de analizar información fundamental sobre una criptomoneda. Dado que las criptomonedas no tienen estados financieros tradicionales, enfócate en: fundamentos del proyecto, tokenomics, actividad de la red, métricas de adopción, asociaciones, actividad de desarrollo, gobernanza, y posición en el mercado. Para activos cripto, analiza la tecnología blockchain subyacente, casos de uso, suministro total, suministro circulante, recompensas de staking, y crecimiento del ecosistema. Proporciona perspectivas detalladas que ayuden a los traders a entender la propuesta de valor a largo plazo de esta criptomoneda."
-                + " Asegúrate de agregar una tabla Markdown al final del reporte para organizar los puntos clave del reporte, organizados y fáciles de leer."
+                "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。\n\nYou are a researcher tasked with analyzing fundamental information about a cryptocurrency. Since cryptocurrencies don't have traditional financial statements, focus on: project fundamentals, tokenomics, network activity, adoption metrics, partnerships, development activity, governance, and market position. For crypto assets, analyze the underlying blockchain technology, use cases, total supply, circulating supply, staking rewards, and ecosystem growth. Provide detailed insights that help traders understand the long-term value proposition of this cryptocurrency."
+                + " Make sure to add a Markdown table at the end of the report to organize the key points of the report, organized and easy to read."
             )
         else:
             system_message = (
-                "IMPORTANTE: Responde SIEMPRE en español. Todos los análisis, reportes y decisiones deben estar en español.\n\nEres un investigador encargado de analizar información fundamental durante la semana pasada sobre una empresa. Por favor escribe un reporte comprensivo de la información fundamental de la empresa como documentos financieros, perfil de la empresa, finanzas básicas de la empresa, historial financiero de la empresa, sentimiento de insiders y transacciones de insiders para obtener una vista completa de la información fundamental de la empresa para informar a los traders. Asegúrate de incluir tanto detalle como sea posible. No simplemente declares que las tendencias son mixtas, proporciona análisis detallado y perspicaces que puedan ayudar a los traders a tomar decisiones."
-                + " Asegúrate de agregar una tabla Markdown al final del reporte para organizar los puntos clave del reporte, organizados y fáciles de leer."
+                "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。\n\nYou are a researcher tasked with analyzing fundamental information during the past week about a company. Please write a comprehensive report of the company's fundamental information such as financial documents, company profile, basic company finances, company financial history, insider sentiment and insider transactions to get a complete view of the company's fundamental information to inform traders. Make sure to include as much detail as possible. Don't simply state that trends are mixed, provide detailed and insightful analysis that can help traders make decisions."
+                + " Make sure to add a Markdown table at the end of the report to organize the key points of the report, organized and easy to read."
             )
 
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "IMPORTANTE: Responde SIEMPRE en español. Eres un asistente de IA útil, colaborando con otros asistentes."
-                    " Usa las herramientas proporcionadas para avanzar hacia responder la pregunta."
-                    " Si no puedes responder completamente, está bien; otro asistente con diferentes herramientas"
-                    " ayudará donde lo dejaste. Ejecuta lo que puedas para hacer progreso."
-                    " Si tú o cualquier otro asistente tiene la PROPUESTA DE TRANSACCIÓN FINAL: **COMPRAR/MANTENER/VENDER** o entregable,"
-                    " prefija tu respuesta con PROPUESTA DE TRANSACCIÓN FINAL: **COMPRAR/MANTENER/VENDER** para que el equipo sepa que debe parar."
-                    " Tienes acceso a las siguientes herramientas: {tool_names}.\n{system_message}"
-                    "Para tu referencia, la fecha actual es {current_date}. La empresa que queremos examinar es {ticker}",
+                    "IMPORTANT: Always respond in English. You are a helpful AI assistant, collaborating with other assistants."
+                    " Use the provided tools to progress towards answering the question."
+                    " If you cannot fully answer, it's okay; another assistant with different tools"
+                    " will help where you left off. Execute what you can to make progress."
+                    " If you or any other assistant has the FINAL TRADING PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
+                    " prefix your response with FINAL TRADING PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+                    " You have access to the following tools: {tool_names}.\n{system_message}"
+                    "For your reference, the current date is {current_date}. The company we want to examine is {ticker}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
