@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import requests
 from openai import OpenAI
 import finnhub
+import json
+from pathlib import Path
 
 # 导入交易框架所需的组件
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -235,8 +237,131 @@ with st.sidebar:
     quick_think_llm = st.text_input("快速模型（快速思考）", "gpt-4o")
 
     run_analysis = st.button(f"🚀 分析{'多个市场' if len(selected_tickers) > 1 else '市场'}")
+    
+    # 添加历史结果加载功能
+    st.divider()
+    st.header("📂 加载历史结果")
+    
+    # 选择加载方式
+    load_method = st.radio("选择加载方式", ["从文件上传", "从保存目录选择"])
+    
+    if load_method == "从文件上传":
+        uploaded_file = st.file_uploader("选择JSON文件", type="json")
+        if uploaded_file is not None:
+            try:
+                json_data = json.load(uploaded_file)
+                st.session_state['loaded_results'] = json_data
+                st.success("✅ 文件加载成功！")
+            except Exception as e:
+                st.error(f"❌ 加载文件时出错: {e}")
+    
+    elif load_method == "从保存目录选择":
+        # 扫描eval_results目录
+        eval_dir = Path("eval_results")
+        if eval_dir.exists():
+            # 获取所有ticker目录
+            ticker_dirs = [d for d in eval_dir.iterdir() if d.is_dir()]
+            if ticker_dirs:
+                ticker_names = [d.name for d in ticker_dirs]
+                selected_ticker_dir = st.selectbox("选择资产", ticker_names)
+                
+                # 获取该资产的所有JSON文件
+                logs_dir = eval_dir / selected_ticker_dir / "TradingAgentsStrategy_logs"
+                if logs_dir.exists():
+                    json_files = list(logs_dir.glob("full_states_log_*.json"))
+                    if json_files:
+                        file_names = [f.name for f in json_files]
+                        selected_file = st.selectbox("选择文件", file_names)
+                        
+                        if st.button("📥 加载文件"):
+                            file_path = logs_dir / selected_file
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    json_data = json.load(f)
+                                st.session_state['loaded_results'] = json_data
+                                st.success(f"✅ 成功加载 {selected_file}")
+                            except Exception as e:
+                                st.error(f"❌ 加载文件时出错: {e}")
+                    else:
+                        st.info("该资产没有保存的结果文件")
+                else:
+                    st.info("该资产没有日志目录")
+            else:
+                st.info("没有找到任何已保存的结果")
+        else:
+            st.info("eval_results 目录不存在")
 
 # --- 主应用区域 ---
+# 显示加载的历史结果
+if 'loaded_results' in st.session_state and st.session_state['loaded_results']:
+    st.header("📊 历史分析结果")
+    
+    loaded_data = st.session_state['loaded_results']
+    
+    # 遍历所有日期的结果
+    for date, state in loaded_data.items():
+        with st.expander(f"📅 {date} - {state.get('company_of_interest', 'N/A')}", expanded=True):
+            # 显示最终决策
+            final_decision = state.get('final_decision', {})
+            if final_decision and isinstance(final_decision, dict):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    action = final_decision.get('action', 'N/A')
+                    if action == 'BUY':
+                        st.success(f"### 💰 {action}")
+                    elif action == 'SELL':
+                        st.error(f"### 📉 {action}")
+                    else:
+                        st.warning(f"### ⏸️ {action}")
+                with col2:
+                    st.metric("置信度", final_decision.get('confidence', 'N/A'))
+                with col3:
+                    st.info(f"资产: {state.get('company_of_interest', 'N/A')}")
+                
+                if final_decision.get('reasoning'):
+                    st.markdown("**决策理由:**")
+                    st.write(final_decision['reasoning'])
+            
+            # 显示各种报告
+            if state.get('market_report'):
+                with st.expander("🔍 市场技术分析"):
+                    st.write(state['market_report'])
+            
+            if state.get('sentiment_report'):
+                with st.expander("📱 社交情绪分析"):
+                    st.write(state['sentiment_report'])
+            
+            if state.get('news_report'):
+                with st.expander("📰 新闻分析"):
+                    st.write(state['news_report'])
+            
+            if state.get('fundamentals_report'):
+                with st.expander("📊 基本面分析"):
+                    st.write(state['fundamentals_report'])
+            
+            # 投资辩论结果
+            if state.get('investment_debate_state', {}).get('judge_decision'):
+                with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
+                    st.write(state['investment_debate_state']['judge_decision'])
+            
+            # 交易员提案
+            if state.get('trader_investment_plan'):
+                with st.expander("💼 交易员提案"):
+                    st.write(state['trader_investment_plan'])
+            
+            # 风险评估
+            if state.get('risk_debate_state', {}).get('judge_decision'):
+                with st.expander("🛡️ 风险管理评估"):
+                    st.write(state['risk_debate_state']['judge_decision'])
+    
+    # 清除加载的结果按钮
+    if st.button("🗑️ 清除历史结果"):
+        del st.session_state['loaded_results']
+        st.rerun()
+    
+    st.divider()
+
+# 实时分析部分
 if run_analysis:
     if not openai_api_key or not finnhub_api_key:
         st.error("请在侧边栏输入您的 OpenAI 和 Finnhub API 密钥。")
