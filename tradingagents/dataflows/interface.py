@@ -667,6 +667,93 @@ def get_YFin_data_online(
     return header + csv_string
 
 
+def call_llm_with_web_search(prompt: str, config: dict) -> str:
+    """
+    调用 LLM 进行网络搜索，自动适配不同的 backend
+    
+    Args:
+        prompt: 搜索提示词
+        config: 配置字典，包含 backend_url 和 quick_think_llm
+    
+    Returns:
+        str: LLM 的响应内容
+    """
+    client = OpenAI(
+        base_url=config["backend_url"],
+        api_key=os.getenv("OPENAI_API_KEY")
+    )
+    
+    # 检测是否是 OpenRouter
+    if "openrouter" in config["backend_url"].lower():
+        # 使用 :online 后缀方式，这在测试中被证明是有效的
+        try:
+            response = client.chat.completions.create(
+                model=f"{config['quick_think_llm']}:online",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1.0,
+                max_tokens=4096
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"OpenRouter web search error: {e}")
+            # 如果失败，尝试使用 plugins 方式
+            try:
+                response = client.chat.completions.create(
+                    model=config['quick_think_llm'],
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=1.0,
+                    max_tokens=4096,
+                    extra_body={
+                        "plugins": [{"id": "web", "max_results": 5}]
+                    }
+                )
+                return response.choices[0].message.content
+            except Exception as e2:
+                print(f"OpenRouter plugins error: {e2}")
+                raise e2
+    else:
+        # 保持原有的 responses.create 方式（用于其他 backend）
+        try:
+            response = client.responses.create(
+                model=config["quick_think_llm"],
+                input=[
+                    {
+                        "role": "system",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": prompt,
+                            }
+                        ],
+                    }
+                ],
+                text={"format": {"type": "text"}},
+                reasoning={},
+                tools=[
+                    {
+                        "type": "web_search_preview",
+                        "user_location": {"type": "approximate"},
+                        "search_context_size": "low",
+                    }
+                ],
+                temperature=1,
+                max_output_tokens=4096,
+                top_p=1,
+                store=True,
+            )
+            # 处理响应
+            if hasattr(response, 'output') and len(response.output) > 1:
+                return response.output[1].content[0].text
+            elif isinstance(response, str):
+                return response
+            else:
+                # 尝试其他可能的响应格式
+                return str(response)
+        except Exception as e:
+            print(f"Standard backend error: {e}")
+            raise e
+
+
 def get_YFin_data(
     symbol: Annotated[str, "ticker symbol of the company"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -704,104 +791,20 @@ def get_YFin_data(
 
 def get_stock_news_openai(ticker, curr_date):
     config = get_config()
-    client = OpenAI(base_url=config["backend_url"])
-
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search Social Media for {ticker} from 7 days before {curr_date} to {curr_date}? Make sure you only get the data posted during that period.",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
-
-    return response.output[1].content[0].text
+    prompt = f"Can you search Social Media for {ticker} from 7 days before {curr_date} to {curr_date}? Make sure you only get the data posted during that period."
+    
+    return call_llm_with_web_search(prompt, config)
 
 
 def get_global_news_openai(curr_date):
     config = get_config()
-    client = OpenAI(base_url=config["backend_url"])
-
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search global or macroeconomics news from 7 days before {curr_date} to {curr_date} that would be informative for trading purposes? Make sure you only get the data posted during that period.",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
-
-    return response.output[1].content[0].text
+    prompt = f"Can you search global or macroeconomics news from 7 days before {curr_date} to {curr_date} that would be informative for trading purposes? Make sure you only get the data posted during that period."
+    
+    return call_llm_with_web_search(prompt, config)
 
 
 def get_fundamentals_openai(ticker, curr_date):
     config = get_config()
-    client = OpenAI(base_url=config["backend_url"])
-
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search Fundamental for discussions on {ticker} during of the month before {curr_date} to the month of {curr_date}. Make sure you only get the data posted during that period. List as a table, with PE/PS/Cash flow/ etc",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
-
-    return response.output[1].content[0].text
+    prompt = f"Can you search Fundamental for discussions on {ticker} during of the month before {curr_date} to the month of {curr_date}. Make sure you only get the data posted during that period. List as a table, with PE/PS/Cash flow/ etc"
+    
+    return call_llm_with_web_search(prompt, config)
