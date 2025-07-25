@@ -24,13 +24,13 @@ def create_trader(llm, memory):
 
         context = {
             "role": "user",
-            "content": f"IMPORTANT: Always respond in English. Based on a comprehensive analysis by a team of analysts, here is a personalized investment plan for {company_name}. This plan incorporates insights from current market technical trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation to evaluate your next trading decision.\n\nProposed Investment Plan: {investment_plan}\n\nUse these insights to make an informed and strategic decision.",
+            "content": f"IMPORTANT:永远用中文回复我! Based on a comprehensive analysis by a team of analysts, here is a personalized investment plan for {company_name}. This plan incorporates insights from current market technical trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation to evaluate your next trading decision.\n\nProposed Investment Plan: {investment_plan}\n\nUse these insights to make an informed and strategic decision.",
         }
 
         messages = [
             {
                 "role": "system",
-                "content": f"""IMPORTANT: Always respond in English. You are a trading agent analyzing market data to make investment decisions. Based on your analysis, provide a specific recommendation to buy, sell, or hold. End with a firm decision and always conclude your response with 'FINAL TRADING PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. Don't forget to utilize lessons from past decisions to learn from your mistakes. Here are some reflections from similar situations where you traded and the lessons learned: {past_memory_str}""",
+                "content": f"""IMPORTANT: 永远用中文回复我! You are a trading agent analyzing market data to make investment decisions. Based on your analysis, provide a specific recommendation to buy, sell, or hold. End with a firm decision and always conclude your response with 'FINAL TRADING PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. Don't forget to utilize lessons from past decisions to learn from your mistakes. Here are some reflections from similar situations where you traded and the lessons learned: {past_memory_str}""",
             },
             context,
         ]
