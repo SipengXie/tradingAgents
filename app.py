@@ -232,9 +232,32 @@ with st.sidebar:
     analysis_date = st.date_input("分析日期", datetime.today())
     
     st.header("🧠 语言模型 (LLM)")
-    llm_provider = st.selectbox("LLM 提供商", ["openai", "google", "anthropic"], index=0)
-    deep_think_llm = st.text_input("主模型（深度思考）", "gpt-4o")
-    quick_think_llm = st.text_input("快速模型（快速思考）", "gpt-4o")
+    
+    # 初始化session_state
+    if 'llm_provider' not in st.session_state:
+        st.session_state.llm_provider = "openai"
+    if 'deep_think_llm' not in st.session_state:
+        st.session_state.deep_think_llm = "gpt-4o"
+    if 'quick_think_llm' not in st.session_state:
+        st.session_state.quick_think_llm = "gpt-4o"
+    
+    # 使用session_state保存用户选择
+    llm_provider = st.selectbox(
+        "LLM 提供商", 
+        ["openai", "google", "anthropic"], 
+        index=["openai", "google", "anthropic"].index(st.session_state.llm_provider),
+        key="llm_provider"
+    )
+    deep_think_llm = st.text_input(
+        "主模型（深度思考）", 
+        value=st.session_state.deep_think_llm,
+        key="deep_think_llm"
+    )
+    quick_think_llm = st.text_input(
+        "快速模型（快速思考）", 
+        value=st.session_state.quick_think_llm,
+        key="quick_think_llm"
+    )
 
     run_analysis = st.button(f"🚀 分析{'多个市场' if len(selected_tickers) > 1 else '市场'}")
     
