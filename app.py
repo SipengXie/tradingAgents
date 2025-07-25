@@ -445,12 +445,12 @@ if run_analysis:
 
                     st.subheader(f"📈 {ticker} 的最终决策：")
                     if decision:
-                        # 如果决策只是一个字符串 (BUY, SELL, HOLD)，直接显示
+                        # 如果决策只是一个字符串 (LONG, SHORT, NEUTRAL)，直接显示
                         if isinstance(decision, str):
                             decision_color = {
-                                "BUY": "green",
-                                "SELL": "red", 
-                                "HOLD": "orange"
+                                "LONG": "green",
+                                "SHORT": "red", 
+                                "NEUTRAL": "orange"
                             }.get(decision.upper(), "blue")
                             st.markdown(f"### :{decision_color}[{decision.upper()}]")
                         else:

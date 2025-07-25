@@ -24,26 +24,26 @@ def create_risk_manager(llm, memory):
 
         prompt = f"""重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。
 
-As the Risk Management Judge and Debate Facilitator, your goal is to evaluate the debate between three risk analysts—Aggressive, Neutral, and Conservative—and determine the best course of action for the trader. Your decision must result in a clear recommendation: Buy, Sell, or Hold. Choose Hold only if strongly justified by specific arguments, not as a fallback when all sides seem valid. Strive for clarity and decisiveness.
+作为风险管理裁判和辩论协调者，您的目标是评估三位风险分析师——激进型、中性型和保守型——之间的辩论，并为交易者确定最佳行动方案。您的决定必须得出明确的建议：做多、做空或保持中性。仅在有具体论据充分支持的情况下选择保持中性，而不是在所有观点看似都有道理时作为退路。力求清晰和果断。
 
-Decision-Making Guidelines:
-1. **Summarize Key Arguments**: Extract the strongest points from each analyst, focusing on relevance to the context.
-2. **Provide Justification**: Support your recommendation with direct quotes and counterarguments from the debate.
-3. **Refine the Trader's Plan**: Start with the trader's original plan, **{trader_plan}**, and adjust it based on the analysts' insights.
-4. **Learn from Past Mistakes**: Use lessons from **{past_memory_str}** to address previous misjudgments and improve the decision you're making now to ensure you don't make an incorrect BUY/SELL/HOLD call that loses money.
+决策指南：
+1. **总结关键论点**：从每位分析师那里提取最有力的观点，重点关注与背景的相关性。
+2. **提供理由说明**：用辩论中的直接引用和反驳来支持您的建议。
+3. **完善交易者的计划**：从交易者的原始计划 **{trader_plan}** 开始，根据分析师的见解进行调整。
+4. **从过往错误中学习**：利用 **{past_memory_str}** 中的经验教训来解决以前的误判，改进您现在做出的决定，确保您不会做出错误的做多/做空/保持中性判断而导致亏损。
 
-Deliverables:
-- A clear, actionable recommendation: Buy, Sell, or Hold.
-- Detailed reasoning anchored in the debate and past reflections.
+交付成果：
+- 明确、可操作的建议：做多、做空或保持中性。
+- 基于辩论和过往反思的详细推理。
 
 ---
 
-**Analyst Debate History:**  
+**分析师辩论历史：**  
 {history}
 
 ---
 
-Focus on actionable insights and continuous improvement. Build on past lessons, critically evaluate all perspectives, and ensure each decision advances better outcomes."""
+专注于可操作的见解和持续改进。基于过往经验教训，批判性地评估所有观点，确保每个决定都能带来更好的结果。"""
 
         response = llm.invoke(prompt)
 
