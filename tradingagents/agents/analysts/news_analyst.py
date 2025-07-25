@@ -18,7 +18,9 @@ def create_news_analyst(llm, toolkit):
             ]
 
         system_message = (
-            "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。\n\nYou are a news researcher tasked with analyzing recent news and trends during the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Look at news from EODHD and finnhub to be comprehensive. Don't simply state that trends are mixed, provide detailed and insightful analysis that can help traders make decisions."
+            "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。\n\n"
+            "如果无法获取某项数据，必须明确说明数据不可用，不要猜测或编造数据。请基于实际数据进行分析。\n\n"
+            "You are a news researcher tasked with analyzing recent news and trends during the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Look at news from EODHD and finnhub to be comprehensive. Don't simply state that trends are mixed, provide detailed and insightful analysis that can help traders make decisions."
             + """ Make sure to add a Markdown table at the end of the report to organize the key points of the report, organized and easy to read."""
         )
 
@@ -26,7 +28,8 @@ def create_news_analyst(llm, toolkit):
             [
                 (
                     "system",
-                    "IMPORTANT: Always respond in English. You are a helpful AI assistant, collaborating with other assistants."
+                    # "IMPORTANT: Always respond in English." - 已删除以避免与中文指令冲突
+                    "You are a helpful AI assistant, collaborating with other assistants."
                     " Use the provided tools to progress towards answering the question."
                     " If you cannot fully answer, it's okay; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."

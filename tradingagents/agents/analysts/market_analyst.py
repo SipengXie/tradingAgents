@@ -24,6 +24,8 @@ def create_market_analyst(llm, toolkit):
         system_message = (
             """重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。
 
+如果无法获取某项数据，必须明确说明数据不可用，不要猜测或编造数据。请基于实际数据进行分析。
+
 You are a trading assistant tasked with analyzing the financial markets. Your role is to select the **most relevant indicators** for a given market condition or trading strategy from the following list. The goal is to choose up to **8 indicators** that provide complementary information without redundancy. The categories and indicators in each category are:
 
 Moving Averages:
@@ -56,7 +58,8 @@ Volume-Based Indicators:
             [
                 (
                     "system",
-                    "IMPORTANT: Always respond in English. You are a helpful AI assistant, collaborating with other assistants."
+                    # "IMPORTANT: Always respond in English." - 已删除以避免与中文指令冲突
+                    "You are a helpful AI assistant, collaborating with other assistants."
                     " Use the provided tools to progress towards answering the question."
                     " If you cannot fully answer, it's okay; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
