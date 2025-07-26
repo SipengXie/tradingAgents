@@ -18,28 +18,36 @@ def create_neutral_debator(llm):
 
         trader_position = state["trader_investment_plan"]
 
-        prompt = f"""重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。
+        prompt = f"""
+**重要提示**：务必使用中文回答，所有分析、报告和决策均应使用中文。
 
-As the Neutral Risk Analyst, your role is to provide a balanced perspective, weighing both the potential benefits and risks of the trader's position or strategy. You prioritize a comprehensive approach, evaluating the advantages and disadvantages while considering broader market trends, potential economic shifts, and diversification strategies. Here is the trader's position:
+作为中性型风险分析师，您的任务是提供一个平衡的视角，权衡交易者的仓位（{trader_position}）或策略的潜在收益与风险。您需要综合考虑市场趋势、潜在的经济变化以及多样化策略的影响，分析每种观点的利弊，并提出一个可持续的策略。您的目标是平衡激进型和保守型分析师的意见，展示为什么中等风险策略能够兼顾增长潜力与风险保护。
 
-{trader_position}
+## 任务概述：
+- **分析激进型和保守型分析师的观点**：批判性地分析并挑战两种观点，指出他们各自过于乐观或过于谨慎的地方。
+- **提倡平衡策略**：基于市场研究、社交媒体情绪、公司基本面等数据，主张一个中等风险的策略，以平衡潜在增长与风险。
+- **回应激进型和保守型分析师的反驳**：通过对比，展示如何在保证增长潜力的同时，避免两种极端策略可能带来的问题。
 
-Your task is to challenge both the Aggressive and Conservative Analysts, pointing out where each perspective may be too optimistic or too cautious. Use insights from the following data sources to support a moderate, sustainable strategy for adjusting the trader's position:
+## 可用资源：
+- 市场研究报告：{market_research_report}
+- 社交媒体情绪报告：{sentiment_report}
+- 最新新闻和全球时事：{news_report}
+- 公司基本面报告：{fundamentals_report}
+- 当前辩论历史：{history}
+- 激进型分析师的最新观点：{current_risky_response}
+- 保守型分析师的最新观点：{current_safe_response}
 
-Market Research Report: {market_research_report}
-Social Media Sentiment Report: {sentiment_report}
-Latest World Affairs Report: {news_report}
-Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here is the latest response from the aggressive analyst: {current_risky_response} Here is the latest response from the conservative analyst: {current_safe_response}. If there are no responses from the other viewpoints, don't hallucinate and just present your point.
+## 行动要求：
+- **分析和反驳激进型观点**：指出激进型分析师的过度乐观，展示其策略可能带来的极端波动和潜在损失。
+- **分析和反驳保守型观点**：揭示保守型分析师的过于谨慎，说明其策略可能错失长期增长机会。
+- **提倡平衡的中等风险策略**：主张在市场趋势、经济潜力和风险管理的基础上，调整交易者的仓位（{trader_position}）为更加均衡的方案，以确保风险和回报的最佳平衡。
 
-Actively engage by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while protecting against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable results. Respond conversationally as if you were speaking without any special formatting.
-
-## 关键术语
-- 使用 LONG（做多）、NEUTRAL（中性）、SHORT（做空）代替 BUY、HOLD、SELL
-- 交易者的仓位（trader's position）代替交易者的决策
-- 交易者的策略（trader's strategy）代替交易者的计划
-- 仓位（positions）代替资产
-- 投资组合（portfolio）代替公司资产"""
+## 关键术语：
+- 使用 **LONG（做多）**、**NEUTRAL（中性）**、**SHORT（做空）** 代替 **BUY**、**HOLD**、**SELL**。
+- **交易者的仓位（trader's position）** 代替 **交易者的决策**。
+- **交易者的策略（trader's strategy）** 代替 **交易者的计划**。
+- **仓位（positions）** 代替 **资产**。
+- **投资组合（portfolio）** 代替 **公司资产**。"""
 
         response = llm.invoke(prompt)
 

@@ -24,13 +24,13 @@ def create_trader(llm, memory):
 
         context = {
             "role": "user",
-            "content": f"IMPORTANT:永远用中文回复我! Based on a comprehensive analysis by a team of analysts, here is a personalized trading strategy for {company_name}. This plan incorporates insights from current market technical trends, macroeconomic indicators, and social media sentiment. Use this plan as a foundation to evaluate your next trading decision.\n\nProposed Trading Strategy: {investment_plan}\n\nUse these insights to make an informed and strategic decision.",
+            "content": f"重要提示：务必用中文回复！ 基于团队分析师的综合评估，以下是针对{company_name}的个性化交易策略。此计划结合了当前市场技术趋势、宏观经济指标和社交媒体情绪。请将该策略作为基础，评估您接下来的交易决策。\n\n建议交易策略：{investment_plan}\n\n请使用这些洞察力做出明智且具战略性的决策。",
         }
 
         messages = [
             {
                 "role": "system",
-                "content": f"""IMPORTANT: 永远用中文回复我! You are a trading agent analyzing market data to make trading decisions. Based on your analysis, provide a specific recommendation to long, short, or neutral. End with a firm decision and always conclude your response with 'FINAL TRADING PROPOSAL: **LONG/NEUTRAL/SHORT**' to confirm your recommendation. Don't forget to utilize lessons from past decisions to learn from your mistakes. Here are some reflections from similar situations where you traded and the lessons learned: {past_memory_str}""",
+                "content": f"""重要提示：务必用中文回复！ 您是一名交易员，负责分析市场数据并做出交易决策。基于您的分析，提供具体的交易建议——做多、做空或中性。做出明确的决策，并在最后使用“FINAL TRADING PROPOSAL: LONG/NEUTRAL/SHORT”确认您的建议。同时，回顾过往决策中的经验和教训，从中学习。以下是类似情形的反思和教训：{past_memory_str}""",
             },
             context,
         ]
