@@ -330,9 +330,9 @@ if 'loaded_results' in st.session_state and st.session_state['loaded_results']:
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     action = final_decision.get('action', 'N/A')
-                    if action == 'BUY':
+                    if action == 'LONG':
                         st.success(f"### 💰 {action}")
-                    elif action == 'SELL':
+                    elif action == 'SHORT':
                         st.error(f"### 📉 {action}")
                     else:
                         st.warning(f"### ⏸️ {action}")
@@ -423,7 +423,7 @@ if run_analysis:
                     config["quick_think_llm"] = quick_think_llm
                     config["online_tools"] = True
                     config["max_debate_rounds"] = 2
-                    config["language"] = "english"
+                    config["language"] = "chinese"
                     config["language_instruction"] = "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。"
 
                     # 根据资产类型选择分析师
@@ -512,7 +512,7 @@ if run_analysis:
                     config["quick_think_llm"] = quick_think_llm
                     config["online_tools"] = True
                     config["max_debate_rounds"] = 1  # 为多资产分析减少轮次
-                    config["language"] = "english"
+                    config["language"] = "chinese"
                     config["language_instruction"] = "重要提示：务必始终使用中文回答。所有分析、报告和决策都应使用中文。"
 
                     # 根据资产类型选择分析师
