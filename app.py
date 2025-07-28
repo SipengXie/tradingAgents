@@ -133,7 +133,8 @@ with st.sidebar:
     # 显示当前配置
     with st.expander("查看当前配置"):
         st.text(f"LLM Backend URL: {backend_url}")
-        st.text(f"LLM Model: {config.get('quick_think_llm', 'N/A')}")
+        st.text(f"主模型 (深度思考): {config.get('deep_think_llm', 'N/A')}")
+        st.text(f"快速模型 (快速思考): {config.get('quick_think_llm', 'N/A')}")
         st.text(f"Embedding URL: {embedding_url}")
         st.text(f"Embedding Model: {embedding_model}")
     
@@ -235,11 +236,11 @@ with st.sidebar:
     
     # 初始化session_state
     if 'llm_provider' not in st.session_state:
-        st.session_state.llm_provider = "openai"
+        st.session_state.llm_provider = config.get("llm_provider", "openai")
     if 'deep_think_llm' not in st.session_state:
-        st.session_state.deep_think_llm = "gpt-4o"
+        st.session_state.deep_think_llm = config.get("deep_think_llm", "openai/gpt-4.1")
     if 'quick_think_llm' not in st.session_state:
-        st.session_state.quick_think_llm = "gpt-4o"
+        st.session_state.quick_think_llm = config.get("quick_think_llm", "openai/gpt-4.1-mini")
     
     # 使用session_state保存用户选择
     llm_provider = st.selectbox(
