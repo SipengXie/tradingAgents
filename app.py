@@ -11,6 +11,8 @@ from pathlib import Path
 # 导入交易框架所需的组件
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.agents.trader.chat_trader import create_chat_trader
+from langchain_openai import ChatOpenAI
 
 # API 测试函数
 def test_llm_api(backend_url, api_key, model):
@@ -72,6 +74,14 @@ st.markdown("该应用使用AI智能体团队分析资产市场并提出交易�
 if 'api_tested' not in st.session_state:
     st.session_state.api_tested = False
     st.session_state.api_test_results = {}
+
+# 初始化聊天相关的session state
+if 'chat_messages' not in st.session_state:
+    st.session_state.chat_messages = []
+if 'chat_context' not in st.session_state:
+    st.session_state.chat_context = None
+if 'show_chat' not in st.session_state:
+    st.session_state.show_chat = False
 
 # 在主页面显示 API 状态
 if st.session_state.api_tested and st.session_state.api_test_results:
@@ -316,82 +326,101 @@ with st.sidebar:
             st.info("eval_results 目录不存在")
 
 # --- 主应用区域 ---
-# 显示加载的历史结果
-if 'loaded_results' in st.session_state and st.session_state['loaded_results']:
-    st.header("📊 历史分析结果")
-    
-    loaded_data = st.session_state['loaded_results']
-    
-    # 遍历所有日期的结果
-    for date, state in loaded_data.items():
-        with st.expander(f"📅 {date} - {state.get('company_of_interest', 'N/A')}", expanded=True):
-            # 显示最终决策
-            final_decision = state.get('final_decision', {})
-            if final_decision and isinstance(final_decision, dict):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    action = final_decision.get('action', 'N/A')
-                    if action == 'LONG':
-                        st.success(f"### 💰 {action}")
-                    elif action == 'SHORT':
-                        st.error(f"### 📉 {action}")
-                    else:
-                        st.warning(f"### ⏸️ {action}")
-                with col2:
-                    st.metric("置信度", final_decision.get('confidence', 'N/A'))
-                with col3:
-                    st.info(f"资产: {state.get('company_of_interest', 'N/A')}")
-                
-                if final_decision.get('reasoning'):
-                    st.markdown("**决策理由:**")
-                    st.write(final_decision['reasoning'])
-            
-            # 显示各种报告
-            if state.get('market_report'):
-                with st.expander("🔍 市场技术分析"):
-                    st.write(state['market_report'])
-            
-            if state.get('sentiment_report'):
-                with st.expander("📱 社交情绪分析"):
-                    st.write(state['sentiment_report'])
-            
-            if state.get('news_report'):
-                with st.expander("📰 新闻分析"):
-                    st.write(state['news_report'])
-            
-            if state.get('fundamentals_report'):
-                with st.expander("📊 基本面分析"):
-                    st.write(state['fundamentals_report'])
-            
-            # 投资辩论结果
-            if state.get('investment_debate_state', {}).get('judge_decision'):
-                with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
-                    st.write(state['investment_debate_state']['judge_decision'])
-            
-            # 交易员提案
-            if state.get('trader_investment_plan'):
-                with st.expander("💼 交易员提案"):
-                    st.write(state['trader_investment_plan'])
-            
-            # 风险评估
-            if state.get('risk_debate_state', {}).get('judge_decision'):
-                with st.expander("🛡️ 风险管理评估"):
-                    st.write(state['risk_debate_state']['judge_decision'])
-    
-    # 清除加载的结果按钮
-    if st.button("🗑️ 清除历史结果"):
-        del st.session_state['loaded_results']
-        st.rerun()
-    
-    st.divider()
+# 使用列布局来创建主内容区和右侧边栏
+main_col, chat_col = st.columns([2, 1])
 
-# 实时分析部分
-if run_analysis:
-    if not openai_api_key or not finnhub_api_key:
-        st.error("请在侧边栏输入您的 OpenAI 和 Finnhub API 密钥。")
-    else:
-        os.environ["OPENAI_API_KEY"] = openai_api_key
-        os.environ["FINNHUB_API_KEY"] = finnhub_api_key
+with main_col:
+    # 显示加载的历史结果
+    if 'loaded_results' in st.session_state and st.session_state['loaded_results']:
+        st.header("📊 历史分析结果")
+        
+        loaded_data = st.session_state['loaded_results']
+        
+        # 遍历所有日期的结果
+        for date, state in loaded_data.items():
+            with st.expander(f"📅 {date} - {state.get('company_of_interest', 'N/A')}", expanded=True):
+                # 添加按钮以开始与这个报告的交易员对话
+                if st.button(f"💬 与交易员讨论此报告", key=f"chat_{date}"):
+                    # 设置聊天上下文
+                    st.session_state.chat_context = {
+                        "company_of_interest": state.get('company_of_interest', 'N/A'),
+                        "final_decision": state.get('final_decision', {}),
+                        "trader_investment_plan": state.get('trader_investment_plan', ''),
+                        "market_report": state.get('market_report', ''),
+                        "sentiment_report": state.get('sentiment_report', ''),
+                        "news_report": state.get('news_report', ''),
+                        "fundamentals_report": state.get('fundamentals_report', '')
+                    }
+                    st.session_state.show_chat = True
+                    st.session_state.chat_messages = []  # 清除之前的对话
+                    st.rerun()
+                # 显示最终决策
+                final_decision = state.get('final_decision', {})
+                if final_decision and isinstance(final_decision, dict):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        action = final_decision.get('action', 'N/A')
+                        if action == 'LONG':
+                            st.success(f"### 💰 {action}")
+                        elif action == 'SHORT':
+                            st.error(f"### 📉 {action}")
+                        else:
+                            st.warning(f"### ⏸️ {action}")
+                    with col2:
+                        st.metric("置信度", final_decision.get('confidence', 'N/A'))
+                    with col3:
+                        st.info(f"资产: {state.get('company_of_interest', 'N/A')}")
+                    
+                    if final_decision.get('reasoning'):
+                        st.markdown("**决策理由:**")
+                        st.write(final_decision['reasoning'])
+                
+                # 显示各种报告
+                if state.get('market_report'):
+                    with st.expander("🔍 市场技术分析"):
+                        st.write(state['market_report'])
+                
+                if state.get('sentiment_report'):
+                    with st.expander("📱 社交情绪分析"):
+                        st.write(state['sentiment_report'])
+                
+                if state.get('news_report'):
+                    with st.expander("📰 新闻分析"):
+                        st.write(state['news_report'])
+                
+                if state.get('fundamentals_report'):
+                    with st.expander("📊 基本面分析"):
+                        st.write(state['fundamentals_report'])
+                
+                # 投资辩论结果
+                if state.get('investment_debate_state', {}).get('judge_decision'):
+                    with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
+                        st.write(state['investment_debate_state']['judge_decision'])
+                
+                # 交易员提案
+                if state.get('trader_investment_plan'):
+                    with st.expander("💼 交易员提案"):
+                        st.write(state['trader_investment_plan'])
+                
+                # 风险评估
+                if state.get('risk_debate_state', {}).get('judge_decision'):
+                    with st.expander("🛡️ 风险管理评估"):
+                        st.write(state['risk_debate_state']['judge_decision'])
+    
+        # 清除加载的结果按钮
+        if st.button("🗑️ 清除历史结果"):
+            del st.session_state['loaded_results']
+            st.rerun()
+        
+        st.divider()
+
+    # 实时分析部分
+    if run_analysis:
+        if not openai_api_key or not finnhub_api_key:
+            st.error("请在侧边栏输入您的 OpenAI 和 Finnhub API 密钥。")
+        else:
+            os.environ["OPENAI_API_KEY"] = openai_api_key
+            os.environ["FINNHUB_API_KEY"] = finnhub_api_key
         
         # 检测资产类型的函数
         def detect_asset_type(ticker):
@@ -435,6 +464,18 @@ if run_analysis:
                     state, decision = ta.propagate(ticker, formatted_date)
 
                     st.success(f"{ticker} ({asset_type}) 分析完成。")
+                    
+                    # 保存分析结果到聊天上下文
+                    st.session_state.chat_context = {
+                        "company_of_interest": ticker,
+                        "final_decision": decision,
+                        "trader_investment_plan": state.get("trader_investment_plan", ""),
+                        "market_report": state.get("market_report", ""),
+                        "sentiment_report": state.get("sentiment_report", ""),
+                        "news_report": state.get("news_report", ""),
+                        "fundamentals_report": state.get("fundamentals_report", "")
+                    }
+                    st.session_state.show_chat = True
 
                     # --- 调试部分 ---
                     with st.expander("🐞 调试输出"):
@@ -596,3 +637,70 @@ if run_analysis:
                             st.write(state.get("risk_management_results", "未找到结果。"))
                     else:
                         st.error(f"分析 {ticker} 时出错：{result['error']}")
+
+# 右侧聊天栏
+with chat_col:
+    if st.session_state.show_chat and st.session_state.chat_context:
+        st.header("💬 与交易员对话")
+        
+        # 显示当前分析的资产
+        ticker = st.session_state.chat_context.get("company_of_interest", "Unknown")
+        st.info(f"📊 当前讨论: {ticker}")
+        
+        # 创建一个可滚动的聊天历史容器
+        chat_container = st.container(height=400)
+        
+        # 显示聊天历史
+        with chat_container:
+            for msg in st.session_state.chat_messages:
+                if msg["role"] == "user":
+                    st.markdown(f"**👤 您:**")
+                    st.markdown(msg['content'])
+                else:
+                    st.markdown(f"**🤖 交易员:**")
+                    st.markdown(msg['content'])
+                st.divider()
+        
+        # 聊天输入区域
+        with st.form(key="chat_form", clear_on_submit=True):
+            user_input = st.text_area("输入您的问题:", key="chat_textarea", height=100)
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                submit_button = st.form_submit_button("发送", type="primary", use_container_width=True)
+            with col2:
+                if st.form_submit_button("🗑️", use_container_width=True):
+                    st.session_state.chat_messages = []
+                    st.rerun()
+            
+            if submit_button and user_input:
+                # 添加用户消息到历史
+                st.session_state.chat_messages.append({"role": "user", "content": user_input})
+                
+                # 创建LLM实例
+                llm_config = DEFAULT_CONFIG.copy()
+
+                # 使用OpenRouter的配置
+                llm = ChatOpenAI(
+                    model=llm_config["deep_think_llm"],
+                    temperature=0.7,
+                    openai_api_key=openai_api_key,
+                    base_url=llm_config["backend_url"]  # 使用OpenRouter URL
+                )
+                
+                # 创建聊天交易员
+                chat_trader = create_chat_trader(llm)
+                
+                # 获取回复
+                with st.spinner("交易员正在思考..."):
+                    response = chat_trader(
+                        st.session_state.chat_messages,
+                        st.session_state.chat_context
+                    )
+                
+                # 添加助手回复到历史
+                st.session_state.chat_messages.append({"role": "assistant", "content": response})
+                
+                # 重新运行以显示新消息
+                st.rerun()
+    else:
+        st.info("💡 完成分析后，聊天功能将在此处显示")

@@ -71,6 +71,7 @@ eval_data/
 .pytest_cache/
 .mypy_cache/
 .coverage
+.nova
 htmlcov/
 
 # Temporary files
