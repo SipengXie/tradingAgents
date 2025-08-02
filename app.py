@@ -82,6 +82,8 @@ if 'chat_context' not in st.session_state:
     st.session_state.chat_context = None
 if 'show_chat' not in st.session_state:
     st.session_state.show_chat = False
+if 'analysis_in_progress' not in st.session_state:
+    st.session_state.analysis_in_progress = False
 
 # 在主页面显示 API 状态
 if st.session_state.api_tested and st.session_state.api_test_results:
@@ -408,9 +410,92 @@ with main_col:
                         st.write(state['risk_debate_state']['judge_decision'])
     
         # 清除加载的结果按钮
-        if st.button("🗑️ 清除历史结果"):
-            del st.session_state['loaded_results']
+        if st.button("🗑️ 清除历史结果", disabled=st.session_state.get('analysis_in_progress', False)):
+            if 'loaded_results' in st.session_state:
+                del st.session_state['loaded_results']
+        
+        st.divider()
+    
+    # 保存实时分析结果的session state
+    if 'realtime_analysis' not in st.session_state:
+        st.session_state.realtime_analysis = None
+    
+    # 如果分析正在进行，显示提示
+    if st.session_state.get('analysis_in_progress', False):
+        st.info("⏳ 分析正在进行中，请等待分析完成...")
+    
+    # 显示实时分析结果（如果有）
+    if st.session_state.realtime_analysis:
+        st.header("🔄 实时分析结果")
+        analysis_data = st.session_state.realtime_analysis
+        state = analysis_data['state']
+        decision = analysis_data['decision']
+        ticker = analysis_data['ticker']
+        
+        # 添加与交易员讨论按钮
+        if st.button("💬 与交易员讨论实时分析", key="chat_realtime"):
+            st.session_state.chat_context = {
+                "company_of_interest": ticker,
+                "final_decision": decision,
+                "trader_investment_plan": state.get("trader_investment_plan", ""),
+                "market_report": state.get("market_report", ""),
+                "sentiment_report": state.get("sentiment_report", ""),
+                "news_report": state.get("news_report", ""),
+                "fundamentals_report": state.get("fundamentals_report", "")
+            }
+            st.session_state.show_chat = True
+            st.session_state.chat_messages = []
             st.rerun()
+        
+        # 显示决策
+        st.subheader(f"📈 {ticker} 的最终决策：")
+        if decision:
+            if isinstance(decision, str):
+                decision_color = {
+                    "LONG": "green",
+                    "SHORT": "red", 
+                    "NEUTRAL": "orange"
+                }.get(decision.upper(), "blue")
+                st.markdown(f"### :{decision_color}[{decision.upper()}]")
+            else:
+                st.json(decision)
+        
+        # 显示详细报告
+        st.subheader("📄 智能体详细报告：")
+        
+        with st.expander("🔍 市场技术分析"):
+            st.write(state.get("market_report", "未找到结果。"))
+        
+        with st.expander("📱 社交情绪分析"):
+            st.write(state.get("sentiment_report", "未找到结果。"))
+        
+        with st.expander("📰 新闻分析"):
+            st.write(state.get("news_report", "未找到结果。"))
+        
+        if state.get("fundamentals_report"):
+            with st.expander("📊 基本面分析"):
+                st.write(state.get("fundamentals_report", "加密货币不适用。"))
+
+        with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
+            investment_debate = state.get("investment_debate_state", {})
+            if investment_debate.get("judge_decision"):
+                st.write(investment_debate["judge_decision"])
+            else:
+                st.write("未找到辩论结果。")
+        
+        with st.expander("💼 交易员提案"):
+            st.write(state.get("trader_investment_plan", "未找到结果。"))
+
+        with st.expander("🛡️ 风险管理评估"):
+            risk_debate = state.get("risk_debate_state", {})
+            if risk_debate.get("judge_decision"):
+                st.write(risk_debate["judge_decision"])
+            else:
+                st.write("未找到风险分析结果。")
+        
+        # 清除实时分析按钮
+        if st.button("🗑️ 清除实时分析", disabled=st.session_state.get('analysis_in_progress', False)):
+            st.session_state.realtime_analysis = None
         
         st.divider()
 
@@ -445,6 +530,9 @@ with main_col:
             ticker = selected_tickers[0]
             asset_type = detect_asset_type(ticker)
             
+            # 设置分析进行中标志
+            st.session_state.analysis_in_progress = True
+            
             with st.spinner(f"AI智能体团队正在分析 {ticker} ({asset_type})... 这可能需要几分钟。"):
                 try:
                     config = DEFAULT_CONFIG.copy()
@@ -465,6 +553,14 @@ with main_col:
 
                     st.success(f"{ticker} ({asset_type}) 分析完成。")
                     
+                    # 保存分析结果到实时分析session state
+                    st.session_state.realtime_analysis = {
+                        'ticker': ticker,
+                        'state': state,
+                        'decision': decision,
+                        'asset_type': asset_type
+                    }
+                    
                     # 保存分析结果到聊天上下文
                     st.session_state.chat_context = {
                         "company_of_interest": ticker,
@@ -476,63 +572,16 @@ with main_col:
                         "fundamentals_report": state.get("fundamentals_report", "")
                     }
                     st.session_state.show_chat = True
-
-                    # --- 调试部分 ---
-                    with st.expander("🐞 调试输出"):
-                        st.markdown("**原始状态 (`state`):**")
-                        st.write(state)
-                        st.markdown("**原始决策 (`decision`):**")
-                        st.write(decision)
-                    # --- 调试部分结束 ---
-
-                    st.subheader(f"📈 {ticker} 的最终决策：")
-                    if decision:
-                        # 如果决策只是一个字符串 (LONG, SHORT, NEUTRAL)，直接显示
-                        if isinstance(decision, str):
-                            decision_color = {
-                                "LONG": "green",
-                                "SHORT": "red", 
-                                "NEUTRAL": "orange"
-                            }.get(decision.upper(), "blue")
-                            st.markdown(f"### :{decision_color}[{decision.upper()}]")
-                        else:
-                            st.json(decision)
-                    else:
-                        st.warning("AI智能体未生成最终决策。")
-
-                    st.subheader("📄 智能体详细报告：")
                     
-                    with st.expander("🔍 市场技术分析"):
-                        st.write(state.get("market_report", "未找到结果。"))
+                    # 分析完成，清除进行中标志
+                    st.session_state.analysis_in_progress = False
                     
-                    with st.expander("📱 社交情绪分析"):
-                        st.write(state.get("sentiment_report", "未找到结果。"))
-                    
-                    with st.expander("📰 新闻分析"):
-                        st.write(state.get("news_report", "未找到结果。"))
-                    
-                    if state.get("fundamentals_report"):
-                        with st.expander("📊 基本面分析"):
-                            st.write(state.get("fundamentals_report", "加密货币不适用。"))
-
-                    with st.expander("⚖️ 研究员辩论（看涨 vs 看跌）"):
-                        investment_debate = state.get("investment_debate_state", {})
-                        if investment_debate.get("judge_decision"):
-                            st.write(investment_debate["judge_decision"])
-                        else:
-                            st.write("未找到辩论结果。")
-                    
-                    with st.expander("💼 交易员提案"):
-                         st.write(state.get("trader_investment_plan", "未找到结果。"))
-
-                    with st.expander("🛡️ 风险管理评估"):
-                        risk_debate = state.get("risk_debate_state", {})
-                        if risk_debate.get("judge_decision"):
-                            st.write(risk_debate["judge_decision"])
-                        else:
-                            st.write("未找到风险分析结果。")
+                    # 分析完成后重新运行以显示结果
+                    st.rerun()
 
                 except Exception as e:
+                    # 出错时也要清除进行中标志
+                    st.session_state.analysis_in_progress = False
                     st.error(f"分析过程中出现错误：{e}")
         
         else:
