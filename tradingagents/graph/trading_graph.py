@@ -70,7 +70,9 @@ class TradingAgentsGraph:
         else:
             raise ValueError(f"Unsupported LLM provider: {self.config['llm_provider']}")
         
-        self.toolkit = Toolkit(config=self.config)
+        # 使用 CryptoAwareToolkit 而不是普通的 Toolkit
+        from tradingagents.agents import CryptoAwareToolkit
+        self.toolkit = CryptoAwareToolkit(config=self.config)
 
         # Initialize memories
         self.bull_memory = FinancialSituationMemory("bull_memory", self.config)
@@ -111,6 +113,21 @@ class TradingAgentsGraph:
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources."""
+        # 获取所有加密货币工具
+        crypto_tools = []
+        if hasattr(self.toolkit, 'crypto_toolkit'):
+            crypto_tools = [
+                self.toolkit.crypto_toolkit.get_crypto_market_data,
+                self.toolkit.crypto_toolkit.get_crypto_technical_indicators,
+                self.toolkit.crypto_toolkit.get_crypto_funding_rate,
+                self.toolkit.crypto_toolkit.get_crypto_liquidations,
+                self.toolkit.crypto_toolkit.get_crypto_orderbook_depth,
+                self.toolkit.crypto_toolkit.get_crypto_open_interest,
+                self.toolkit.crypto_toolkit.get_crypto_long_short_ratio,
+                self.toolkit.crypto_toolkit.get_crypto_whale_trades,
+                self.toolkit.crypto_toolkit.get_crypto_market_sentiment,
+            ]
+        
         return {
             "market": ToolNode(
                 [
@@ -120,7 +137,7 @@ class TradingAgentsGraph:
                     # offline tools
                     self.toolkit.get_YFin_data,
                     self.toolkit.get_stockstats_indicators_report,
-                ]
+                ] + crypto_tools  # 添加加密货币工具
             ),
             "social": ToolNode(
                 [
@@ -128,7 +145,7 @@ class TradingAgentsGraph:
                     self.toolkit.get_stock_news_openai,
                     # offline tools
                     self.toolkit.get_reddit_stock_info,
-                ]
+                ] + ([self.toolkit.crypto_toolkit.get_crypto_market_sentiment] if hasattr(self.toolkit, 'crypto_toolkit') else [])
             ),
             "news": ToolNode(
                 [
@@ -150,7 +167,11 @@ class TradingAgentsGraph:
                     self.toolkit.get_simfin_balance_sheet,
                     self.toolkit.get_simfin_cashflow,
                     self.toolkit.get_simfin_income_stmt,
-                ]
+                ] + ([
+                    self.toolkit.crypto_toolkit.get_crypto_funding_rate,
+                    self.toolkit.crypto_toolkit.get_crypto_long_short_ratio,
+                    self.toolkit.crypto_toolkit.get_crypto_market_sentiment
+                ] if hasattr(self.toolkit, 'crypto_toolkit') else [])
             ),
         }
 

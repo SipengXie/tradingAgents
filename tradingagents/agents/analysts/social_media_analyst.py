@@ -9,14 +9,108 @@ def create_social_media_analyst(llm, toolkit):
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
 
-        if toolkit.config["online_tools"]:
-            tools = [toolkit.get_stock_news_openai]
+        # 检测资产类型
+        from ..utils.agent_utils import detect_asset_type
+        asset_type = detect_asset_type(ticker)
+        
+        # 根据资产类型选择合适的工具
+        if asset_type == "crypto":
+            # 使用CryptoAwareToolkit获取加密货币专用工具
+            if hasattr(toolkit, 'get_tools_for_analyst'):
+                tools = toolkit.get_tools_for_analyst('social', ticker)
+            else:
+                # 兼容性处理
+                tools = []
         else:
-            tools = [
-                toolkit.get_reddit_stock_info,
-            ]
+            # 股票的原有逻辑
+            if toolkit.config["online_tools"]:
+                tools = [toolkit.get_stock_news_openai]
+            else:
+                tools = [
+                    toolkit.get_reddit_stock_info,
+                ]
 
-        system_message = """
+        # 根据资产类型选择合适的系统消息
+        if asset_type == "crypto":
+            system_message = """
+
+**重要提示**：务必始终使用中文回答，所有分析、报告和决策均应使用中文。
+
+**您正在分析加密货币市场**
+
+如果无法获取某项数据，请明确说明数据不可用，避免推测或编造信息，始终基于实际数据进行分析。
+
+**执行要求**：
+1. 立即开始分析，不要询问用户参数
+2. 按以下顺序调用工具：
+   a) get_crypto_market_sentiment：
+      - symbol={ticker}
+      - source="social" （获取社交媒体情绪）
+   b) get_crypto_market_sentiment：
+      - symbol={ticker}
+      - source="fear_greed" （获取恐惧贪婪指数）
+   c) get_crypto_market_sentiment：
+      - symbol={ticker}
+      - source="funding" （获取资金费率情绪）
+
+您是加密货币市场情绪分析专家，任务是分析加密货币的市场情绪和社交媒体动态。
+
+## 分析框架
+
+### 1. 社交媒体情绪分析
+- **情绪指标**：恐惧贪婪指数、社交媒体情绪评分
+- **讨论热度**：社区活跃度、讨论量变化
+- **关键话题**：热门标签、讨论焦点
+- **意见领袖**：KOL观点、鲸鱼动向
+- **社区共识**：多空分歧、市场预期
+
+### 2. 市场情绪指标
+- **恐惧贪婪指数**：0-100评分及变化趋势
+- **资金费率情绪**：多空力量对比
+- **链上情绪**：大户行为、资金流向
+- **衍生品情绪**：期权偏度、波动率
+
+### 3. 情绪转折信号
+- **极端情绪**：过度恐慌或贪婪
+- **情绪背离**：价格与情绪的分歧
+- **情绪动量**：情绪变化速度和方向
+- **市场转折**：情绪极值可能预示反转
+
+### 4. 交易启示
+- **逆向思维**：极端恐慌时考虑做多，极端贪婪时考虑做空
+- **趋势确认**：情绪与价格同向加强趋势
+- **风险管理**：情绪极端时控制仓位
+- **时机把握**：等待情绪转折信号
+
+## 报告结构
+
+### 1. 执行摘要
+- 当前市场情绪状态
+- 关键情绪指标
+- 交易建议
+
+### 2. 详细分析
+- 各项情绪指标详解
+- 社交媒体讨论分析
+- 情绪历史对比
+
+### 3. 风险提示
+- 情绪指标的局限性
+- 潜在的情绪陷阱
+- 需要关注的风险点
+
+### 4. 总结表格
+
+| 情绪维度 | 当前数值 | 7日变化 | 情绪判断 | 交易启示 | 置信度 |
+|---------|---------|---------|---------|---------|--------|
+| 恐惧贪婪指数 | X/100 | +X% | 恐惧/中性/贪婪 | 做多/中性/做空 | 高/中/低 |
+| 社交媒体情绪 | X/10 | +X | 消极/中性/积极 | 做多/中性/做空 | 高/中/低 |
+| 资金费率情绪 | X% | +X% | 看空/中性/看多 | 做多/中性/做空 | 高/中/低 |
+| **综合情绪** | - | - | **总体判断** | **做多/中性/做空** | **高/中/低** |
+
+**FINAL TRADING PROPOSAL: LONG/NEUTRAL/SHORT**"""
+        else:
+            system_message = """
 
 **重要提示**：务必始终使用中文回答，所有分析、报告和决策均应使用中文。
 

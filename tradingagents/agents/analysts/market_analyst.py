@@ -10,20 +10,148 @@ def create_market_analyst(llm, toolkit):
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
 
-        if toolkit.config["online_tools"]:
-            tools = [
-                toolkit.get_YFin_data_online,
-                toolkit.get_stockstats_indicators_report_online,
-            ]
+        # 如果是CryptoAwareToolkit，使用智能工具选择
+        if hasattr(toolkit, 'get_tools_for_analyst'):
+            tools = toolkit.get_tools_for_analyst('market', ticker)
         else:
-            tools = [
-                toolkit.get_YFin_data,
-                toolkit.get_stockstats_indicators_report,
-            ]
+            # 兼容旧的Toolkit
+            if toolkit.config["online_tools"]:
+                tools = [
+                    toolkit.get_YFin_data_online,
+                    toolkit.get_stockstats_indicators_report_online,
+                ]
+            else:
+                tools = [
+                    toolkit.get_YFin_data,
+                    toolkit.get_stockstats_indicators_report,
+                ]
 
-        system_message = """**重要提示**：务必使用中文回答，所有分析、报告和决策均应使用中文。
+        # 检测资产类型
+        from ..utils.agent_utils import detect_asset_type
+        asset_type = detect_asset_type(ticker)
+        
+        # 根据资产类型选择合适的系统消息
+        if asset_type == "crypto":
+            system_message = """**重要提示**：务必使用中文回答，所有分析、报告和决策均应使用中文。
 
 若无法获取某项数据，请明确说明数据不可用，避免推测或编造数据，且始终基于实际数据进行分析。
+
+**您正在分析加密货币市场**
+
+**重要：请使用加密货币专用工具（get_crypto_开头的工具），而不是传统股票工具（get_YFin_或get_stockstats_）**
+
+**执行要求**：
+1. 立即开始分析，不要询问用户参数
+2. 当前日期是 {current_date}。你必须基于这个日期计算其他日期。
+3. 按以下顺序调用工具（所有工具都要调用）：
+   a) get_crypto_market_data：
+      - symbol={ticker}
+      - start_date=计算 {current_date} 减去7天后的日期（例如：如果当前是2024-01-15，则为2024-01-08）
+      - end_date={current_date}
+      - interval="4h"
+   b) get_crypto_technical_indicators：
+      - symbol={ticker}
+      - interval="4h"
+      - indicators=["rsi", "macd", "boll", "volume_profile"]
+      - start_date=计算 {current_date} 减去60天后的日期（例如：如果当前是2024-01-15，则为2023-11-16）
+      - end_date={current_date}
+   c) get_crypto_orderbook_depth：
+      - symbol={ticker}
+      - limit=20
+   d) get_crypto_whale_trades：
+      - symbol={ticker}
+      - min_amount=自动计算
+   e) get_crypto_open_interest：
+      - symbol={ticker}
+      - period="5m"
+      - limit=48
+4. 如果某个工具调用失败，记录失败原因但继续执行其他分析
+
+**时间范围设定**：
+- 默认使用7天历史数据进行技术分析（加密货币市场变化快速）
+- K线间隔默认使用4小时（4h）
+
+您是加密货币市场分析专家，任务是分析加密货币的市场动态。请重点关注以下方面：
+
+**1. 市场数据分析**：
+- 价格走势（OHLCV数据）
+- 成交量和成交额分析
+- 价格波动性
+
+**2. 技术指标分析**（请获取并分析所有以下指标）：
+- RSI（相对强弱指数）
+  - 分析14期和21期RSI
+  - 关注超买（>70）和超卖（<30）区域
+  - 观察RSI背离信号
+- MACD（移动平均收敛散度）
+  - 分析MACD线、信号线和柱状图
+  - 关注金叉和死叉信号
+  - 观察MACD与价格的背离
+- 布林带（Bollinger Bands）
+  - 分析上轨、中轨、下轨位置
+  - 计算带宽变化（波动性）
+  - 关注价格突破和回归
+- 成交量分析
+  - 对比当前成交量与平均成交量
+  - 识别异常放量或缩量
+  - 分析量价关系
+
+**3. 加密货币专有指标**（必须分析所有以下数据）：
+- 订单簿深度
+  - 分析买卖盘分布
+  - 识别主要支撑和阻力位
+  - 计算买卖盘比率
+- 大额交易（鲸鱼活动）
+  - 追踪大额买入/卖出订单
+  - 分析大户积累或派发行为
+  - 评估对价格的潜在影响
+- 持仓量（期货）
+  - 分析持仓量变化趋势
+  - 对比价格与持仓量关系
+  - 判断趋势强度
+- 资金费率（如支持）
+  - 分析多空情绪
+  - 识别市场过热信号
+- 多空比
+  - 分析散户和大户多空比
+  - 识别市场情绪极端值
+- 清算数据（如支持）
+  - 分析近期清算量
+  - 识别关键清算价位
+
+**分析要点**：
+1. 加密货币市场24/7交易，注意时区影响
+2. 高波动性是常态，设置合理的止损
+3. 关注比特币走势对山寨币的影响
+4. 注意重大事件（升级、监管、黑客事件等）
+5. 流动性可能不如传统市场，注意滑点风险
+
+**风险管理**：
+- 建议仓位：根据市场波动性调整（通常不超过总资金的5-10%）
+- 止损设置：基于ATR或关键支撑位（通常5-10%）
+- 分批建仓：避免一次性大额买入"""
+        else:
+            system_message = """**重要提示**：务必使用中文回答，所有分析、报告和决策均应使用中文。
+
+若无法获取某项数据，请明确说明数据不可用，避免推测或编造数据，且始终基于实际数据进行分析。
+
+**执行要求**：
+1. 立即开始分析，不要询问用户参数
+2. 当前日期是 {current_date}。你必须基于这个日期计算其他日期。
+3. 必须按以下方式调用工具：
+   a) get_YFin_data或get_YFin_data_online：
+      - symbol={ticker}
+      - start_date=计算 {current_date} 减去30天后的日期
+      - end_date={current_date}
+   b) get_stockstats_indicators_report或get_stockstats_indicators_report_online：
+      - 必须分析以下指标（每个指标单独调用）：
+      - rsi（14期）
+      - macd（包括macd、macds、macdh）
+      - boll、boll_ub、boll_lb（布林带系列）
+      - close_50_sma和close_200_sma（趋势判断）
+      - atr（波动性）
+      - vwma或mfi（成交量相关）
+3. 如果某个工具调用失败，继续执行其他分析，不要停止
 
 **时间范围设定**：
 - 默认使用30天历史数据进行技术分析（结束日期：当前交易日期；开始日期：当前日期前30天）。
@@ -79,31 +207,59 @@ def create_market_analyst(llm, toolkit):
 - **目标价位**：基于技术形态或斐波那契水平。
 - **仓位大小**：根据波动性调整。
 
-**报告结构**：
+**报告结构**（必须包含所有部分）：
 1. **市场概览**：
-   - 当前价格与趋势状态
-   - 关键支撑/阻力位
-   - 成交量分析
-2. **技术指标分析**：
-   - 趋势指标（如MA）
-   - 动量指标（如RSI、MACD）
-   - 波动性指标（如布林带、ATR）
-3. **交易信号**：
-   - 主要信号
-   - 确认信号
-   - 背离或警告信号
-4. **风险评估**：
-   - 市场风险
-   - 技术面风险
-   - 风险管理措施
-5. **总结表格**：
+   - 当前价格、24h涨跌幅、成交量
+   - 价格趋势判断（上升/横盘/下降）
+   - 关键支撑位和阻力位（至少3个）
+   - 成交量特征（放量/缩量/正常）
 
-| 分析维度  | 当前状态 | 信号强度 | 交易建议  |
-|-----------|----------|----------|-----------|
-| 趋势方向  | 上升/横盘/下降 | 强/中/弱   | LONG/NEUTRAL/SHORT |
-| 动量指标  | 超买/正常/超卖 | 强/中/弱   | LONG/NEUTRAL/SHORT |
-| 波动性    | 高/中/低 | -        | 调整仓位大小  |
-| 综合建议  | -        | -        | LONG/NEUTRAL/SHORT |
+2. **技术指标详细分析**：
+   - **趋势指标**：
+     - MA系统：价格与各均线关系
+     - 趋势强度和持续性判断
+   - **动量指标**：
+     - RSI：具体数值、超买超卖判断、背离分析
+     - MACD：金叉死叉、柱状图变化、背离分析
+   - **波动性指标**：
+     - 布林带：位置、带宽、挤压状态
+     - ATR：波动性水平、止损建议
+
+3. **特色数据分析**（加密货币专有）：
+   - 订单簿：买卖压力、深度评估
+   - 鲸鱼活动：大户动向判断
+   - 期货数据：持仓变化、市场情绪
+
+4. **交易信号汇总**：
+   - 看涨信号：列出所有看涨因素
+   - 看跌信号：列出所有看跌因素
+   - 中性因素：列出观望因素
+
+5. **风险评估**：
+   - 主要风险点（至少3个）
+   - 止损建议（基于ATR或支撑位）
+   - 仓位建议（基于风险等级）
+
+6. **综合分析表格**：
+
+| 指标类别 | 具体指标 | 当前数值 | 信号解读 | 强度评级 |
+|---------|---------|---------|---------|---------|
+| 趋势指标 | MA50/MA200 | X/Y | 金叉/死叉/中性 | 强/中/弱 |
+| 动量指标 | RSI(14) | X | 超买/正常/超卖 | 强/中/弱 |
+| 动量指标 | MACD | X | 多头/空头 | 强/中/弱 |
+| 波动性 | 布林带 | X | 突破/回归/挤压 | 高/中/低 |
+| 成交量 | 量比 | X | 放量/缩量 | 明显/正常 |
+| **综合评分** | - | - | **总体判断** | **强/中/弱** |
+
+7. **交易建议**：
+   - **方向**：LONG/NEUTRAL/SHORT
+   - **信心度**：高/中/低
+   - **入场价位**：具体价格
+   - **止损价位**：具体价格
+   - **目标价位**：具体价格（至少2个）
+   - **仓位建议**：占总资金百分比
+
+**FINAL TRADING PROPOSAL: LONG/NEUTRAL/SHORT**
 
 ## 注意事项：
 1. **数据完整性**：确保使用完整历史数据分析。
@@ -118,7 +274,9 @@ def create_market_analyst(llm, toolkit):
                 (
                     "system",
                     # "IMPORTANT: Always respond in English." - 已删除以避免与中文指令冲突
-                    "You are a helpful AI assistant, collaborating with other assistants."
+                    "You are a market analysis expert. Your job is to IMMEDIATELY analyze market data using the available tools."
+                    " DO NOT ask the user for parameters or clarification - use the default parameters specified in your instructions."
+                    " Execute all relevant tools to gather comprehensive market data and provide analysis."
                     " Use the provided tools to progress towards answering the question."
                     " If you cannot fully answer, it's okay; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."

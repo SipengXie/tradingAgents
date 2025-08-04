@@ -13,6 +13,35 @@ from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from langchain_core.messages import HumanMessage
+from .crypto_utils import CryptoToolkit
+
+
+def detect_asset_type(ticker: str) -> str:
+    """
+    检测资产类型
+    
+    Args:
+        ticker: 资产代码
+        
+    Returns:
+        str: "crypto", "index", 或 "stock"
+    """
+    # 加密货币通常以USDT结尾或包含-USD
+    if (ticker.endswith("USDT") or 
+        ticker.endswith("-USD") or 
+        ticker.endswith("-EUR") or
+        ticker.endswith("BTC") or
+        ticker.endswith("ETH")):
+        return "crypto"
+    
+    # 主要指数ETF
+    index_tickers = ["SPY", "QQQ", "IWM", "VTI", "DIA", "GLD", "TLT", "VIX", "DXY", 
+                     "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX"]
+    if ticker.upper() in index_tickers:
+        return "index"
+    
+    # 其他都认为是股票
+    return "stock"
 
 
 def create_msg_delete():
@@ -417,3 +446,121 @@ class Toolkit:
         )
 
         return openai_fundamentals_results
+
+
+class CryptoAwareToolkit(Toolkit):
+    """
+    扩展的工具包，支持根据资产类型自动选择合适的工具
+    """
+    
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.crypto_toolkit = CryptoToolkit(self.config)
+    
+    def get_market_data_tool(self, ticker: str):
+        """根据资产类型返回合适的市场数据工具"""
+        asset_type = detect_asset_type(ticker)
+        if asset_type == "crypto":
+            return self.crypto_toolkit.get_crypto_market_data
+        else:
+            return self.get_YFin_data_online if self.config.get("online_tools") else self.get_YFin_data
+    
+    def get_technical_analysis_tool(self, ticker: str):
+        """根据资产类型返回合适的技术分析工具"""
+        asset_type = detect_asset_type(ticker)
+        if asset_type == "crypto":
+            return self.crypto_toolkit.get_crypto_technical_indicators
+        else:
+            return self.get_stockstats_indicators_report_online if self.config.get("online_tools") else self.get_stockstats_indicators_report
+    
+    def get_market_specific_tools(self, ticker: str):
+        """获取特定市场的专用工具"""
+        asset_type = detect_asset_type(ticker)
+        if asset_type == "crypto":
+            # 返回加密货币专用工具
+            return [
+                self.crypto_toolkit.get_crypto_funding_rate,
+                self.crypto_toolkit.get_crypto_liquidations,
+                self.crypto_toolkit.get_crypto_orderbook_depth,
+                self.crypto_toolkit.get_crypto_open_interest,
+                self.crypto_toolkit.get_crypto_long_short_ratio,
+                self.crypto_toolkit.get_crypto_whale_trades,
+                self.crypto_toolkit.get_crypto_market_sentiment
+            ]
+        else:
+            # 返回股票专用工具
+            return [
+                self.get_finnhub_company_insider_sentiment,
+                self.get_finnhub_company_insider_transactions,
+                self.get_simfin_balance_sheet,
+                self.get_simfin_cashflow,
+                self.get_simfin_income_stmt
+            ]
+    
+    def get_tools_for_analyst(self, analyst_type: str, ticker: str):
+        """根据分析师类型和资产类型返回合适的工具集"""
+        asset_type = detect_asset_type(ticker)
+        
+        if analyst_type == "market":
+            # 市场分析师工具
+            base_tools = [
+                self.get_market_data_tool(ticker),
+                self.get_technical_analysis_tool(ticker)
+            ]
+            
+            if asset_type == "crypto":
+                # 加密货币额外工具
+                base_tools.extend([
+                    self.crypto_toolkit.get_crypto_orderbook_depth,
+                    self.crypto_toolkit.get_crypto_whale_trades,
+                    self.crypto_toolkit.get_crypto_open_interest
+                ])
+            
+            return base_tools
+            
+        elif analyst_type == "news":
+            # 新闻分析师工具
+            base_tools = [
+                self.get_finnhub_news,
+                self.get_google_news
+            ]
+            
+            if self.config.get("online_tools"):
+                base_tools.append(self.get_global_news_openai)
+            
+            return base_tools
+            
+        elif analyst_type == "social":
+            # 社交媒体分析师工具
+            base_tools = [
+                self.get_reddit_news,
+                self.get_reddit_stock_info
+            ]
+            
+            if asset_type == "crypto":
+                base_tools.append(self.crypto_toolkit.get_crypto_market_sentiment)
+            
+            if self.config.get("online_tools"):
+                base_tools.append(self.get_stock_news_openai)
+            
+            return base_tools
+            
+        elif analyst_type == "fundamentals":
+            # 基本面分析师工具（仅股票）
+            if asset_type == "crypto":
+                # 加密货币不需要传统基本面分析，但可以获取一些特殊数据
+                return [
+                    self.crypto_toolkit.get_crypto_funding_rate,
+                    self.crypto_toolkit.get_crypto_long_short_ratio,
+                    self.crypto_toolkit.get_crypto_market_sentiment
+                ]
+            else:
+                return [
+                    self.get_finnhub_company_insider_sentiment,
+                    self.get_finnhub_company_insider_transactions,
+                    self.get_simfin_balance_sheet,
+                    self.get_simfin_cashflow,
+                    self.get_simfin_income_stmt
+                ]
+        
+        return []
