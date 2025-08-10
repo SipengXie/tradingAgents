@@ -309,7 +309,13 @@ def get_binance_orderbook(symbol: str, limit: int = 20) -> str:
         output = f"# {symbol} 订单簿深度分析\n"
         output += f"# 买盘总量: {bid_volume:.4f} ({bid_value:.2f} USDT)\n"
         output += f"# 卖盘总量: {ask_volume:.4f} ({ask_value:.2f} USDT)\n"
-        output += f"# 买卖比: {bid_volume/ask_volume:.2f}\n"
+        # 避免除零错误
+        if ask_volume > 0:
+            output += f"# 买卖比: {bid_volume/ask_volume:.2f}\n"
+        elif bid_volume > 0:
+            output += f"# 买卖比: ∞ (无卖盘)\n"
+        else:
+            output += f"# 买卖比: N/A (无挂单)\n"
         output += f"# 最高买价: {bids.iloc[0]['price']:.2f}\n"
         output += f"# 最低卖价: {asks.iloc[0]['price']:.2f}\n"
         output += f"# 价差: {(asks.iloc[0]['price'] - bids.iloc[0]['price']):.2f}\n\n"
@@ -684,8 +690,13 @@ def get_crypto_technical_analysis(
             elif current_price < current_lower:
                 output += "位置: 下轨之下 (超卖)\n"
             else:
-                position = (current_price - current_lower) / (current_upper - current_lower) * 100
-                output += f"位置: 带内 ({position:.1f}%)\n"
+                # 避免除零错误
+                band_width = current_upper - current_lower
+                if band_width > 0:
+                    position = (current_price - current_lower) / band_width * 100
+                    output += f"位置: 带内 ({position:.1f}%)\n"
+                else:
+                    output += "位置: 带内 (带宽为0)\n"
             output += "\n"
         
         # 成交量分析
@@ -693,7 +704,7 @@ def get_crypto_technical_analysis(
             output += "## 成交量分析\n"
             avg_volume = df['volume'].mean()
             current_volume = df['volume'].iloc[-1]
-            volume_ratio = current_volume / avg_volume
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
             
             output += f"当前成交量: {current_volume:,.2f}\n"
             output += f"平均成交量: {avg_volume:,.2f}\n"
@@ -750,7 +761,8 @@ def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     
-    rs = gain / loss
+    # 避免除零错误
+    rs = gain / loss.where(loss != 0, 1e-10)  # 使用极小值替代0
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
@@ -810,7 +822,15 @@ def get_binance_whale_trades(symbol: str, min_amount: float = 100000, limit: int
         output += f"# 最小金额阈值: {min_amount:,.0f} USDT\n"
         output += f"# 大额买入: {buy_volume:,.0f} USDT\n"
         output += f"# 大额卖出: {sell_volume:,.0f} USDT\n"
-        output += f"# 买卖比: {buy_volume/sell_volume:.2f}\n\n"
+        
+        # 避免除零错误
+        if sell_volume > 0:
+            buy_sell_ratio = buy_volume / sell_volume
+            output += f"# 买卖比: {buy_sell_ratio:.2f}\n\n"
+        elif buy_volume > 0:
+            output += f"# 买卖比: ∞ (无卖出)\n\n"
+        else:
+            output += f"# 买卖比: N/A (无交易)\n\n"
         
         # 输出最近的大额交易
         whale_trades['side'] = whale_trades['isBuyerMaker'].apply(lambda x: 'SELL' if x else 'BUY')
@@ -882,8 +902,12 @@ def get_crypto_sentiment(symbol: str, source: str = "fear_greed") -> str:
                     output += "## 基于资金费率的市场情绪\n"
                     output += f"当前资金费率: {current_rate:.4%}\n"
                     output += f"3日平均费率: {avg_rate:.4%}\n"
-                    output += f"正费率次数: {positive_count} ({positive_count/len(df)*100:.1f}%)\n"
-                    output += f"负费率次数: {negative_count} ({negative_count/len(df)*100:.1f}%)\n\n"
+                    if len(df) > 0:
+                        output += f"正费率次数: {positive_count} ({positive_count/len(df)*100:.1f}%)\n"
+                        output += f"负费率次数: {negative_count} ({negative_count/len(df)*100:.1f}%)\n\n"
+                    else:
+                        output += f"正费率次数: {positive_count}\n"
+                        output += f"负费率次数: {negative_count}\n\n"
                     
                     # 情绪判断
                     if avg_rate > 0.01:

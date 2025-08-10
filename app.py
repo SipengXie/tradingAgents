@@ -59,6 +59,43 @@ def test_finnhub_api(api_key):
     except Exception as e:
         return False, f"Finnhub API 连接失败: {str(e)}"
 
+def test_binance_api(api_key, api_secret):
+    """测试 Binance API 是否可用"""
+    try:
+        from tradingagents.dataflows.binance_utils import BinanceAPIWrapper
+        
+        # 创建 API 包装器
+        api = BinanceAPIWrapper(api_key=api_key, api_secret=api_secret)
+        
+        # 测试基本连接
+        ping_result = api.ping()
+        if ping_result != {}:
+            return False, "Binance API ping 响应异常"
+        
+        # 测试服务器时间
+        server_time = api.get_server_time()
+        if not server_time or 'serverTime' not in server_time:
+            return False, "Binance API 服务器时间获取失败"
+        
+        # 如果提供了密钥，测试认证
+        if api_key and api_secret:
+            try:
+                # 测试获取账户信息
+                account = api.client.get_account()
+                if account and 'balances' in account:
+                    return True, "Binance API 连接成功（已认证）"
+            except Exception as auth_error:
+                # 认证失败但基本连接成功
+                if "APIError" in str(auth_error):
+                    return True, f"Binance API 连接成功（认证失败: {str(auth_error)[:50]}...）"
+        
+        return True, "Binance API 连接成功（公共接口）"
+        
+    except ImportError:
+        return False, "Binance 库未安装，请运行: pip install python-binance"
+    except Exception as e:
+        return False, f"Binance API 连接失败: {str(e)}"
+
 # --- Streamlit 页面配置 ---
 st.set_page_config(
     page_title="AI 交易助手",
@@ -89,7 +126,7 @@ if 'analysis_in_progress' not in st.session_state:
 if st.session_state.api_tested and st.session_state.api_test_results:
     with st.container():
         st.subheader("📡 API 连接状态")
-        cols = st.columns(3)
+        cols = st.columns(4)
         
         # LLM 状态
         with cols[0]:
@@ -121,6 +158,16 @@ if st.session_state.api_tested and st.session_state.api_test_results:
                 if embed_status.get('message'):
                     st.caption(embed_status['message'])
         
+        # Binance 状态
+        with cols[3]:
+            binance_status = st.session_state.api_test_results.get('binance', {})
+            if binance_status.get('success'):
+                st.success("✅ Binance API 正常")
+            else:
+                st.error("❌ Binance API 异常")
+                if binance_status.get('message'):
+                    st.caption(binance_status['message'])
+        
         st.divider()
 
 # --- 侧边栏配置 ---
@@ -131,6 +178,8 @@ with st.sidebar:
 
     openai_api_key = st.text_input("OpenAI API 密钥", type="password", value=os.getenv("OPENAI_API_KEY") or "")
     finnhub_api_key = st.text_input("Finnhub API 密钥", type="password", value=os.getenv("FINNHUB_API_KEY") or "")
+    binance_api_key = st.text_input("Binance API 密钥", type="password", value=os.getenv("BINANCE_API_KEY") or "")
+    binance_api_secret = st.text_input("Binance API Secret", type="password", value=os.getenv("BINANCE_API_SECRET") or "")
     
     # API 测试部分
     st.header("🔍 API 连接测试")
@@ -192,6 +241,15 @@ with st.sidebar:
         else:
             st.warning("⚠️ Embedding API 配置不完整")
             st.session_state.api_test_results['embedding'] = {'success': False, 'message': "配置不完整"}
+        
+        # 测试 Binance API
+        # Binance API 可以没有密钥（公共接口），所以始终测试
+        binance_success, binance_msg = test_binance_api(binance_api_key, binance_api_secret)
+        st.session_state.api_test_results['binance'] = {'success': binance_success, 'message': binance_msg}
+        if binance_success:
+            st.success(f"✅ {binance_msg}")
+        else:
+            st.error(f"❌ {binance_msg}")
         
         # 标记已测试
         st.session_state.api_tested = True
