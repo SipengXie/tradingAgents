@@ -32,6 +32,9 @@ requests>=2.31.0
 # Trading Framework
 backtrader>=1.9.78
 
+# Exchanges / SDKs
+paradex-py>=0.4.8
+
 # Utilities
 python-dotenv>=1.0.0
 pytz>=2023.3
