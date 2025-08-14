@@ -12,6 +12,11 @@ DEFAULT_CONFIG = {
         os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
         "dataflows/data_cache",
     ),
+    # Memory persistence settings
+    "memory_persist_dir": os.path.join(
+        os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
+        "memory_db",
+    ),
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "x-ai/grok-4",
