@@ -509,11 +509,15 @@ class CryptoAwareToolkit(Toolkit):
             ]
             
             if asset_type == "crypto":
-                # 加密货币额外工具
+                # 加密货币额外工具 - 包含所有市场分析相关指标
                 base_tools.extend([
                     self.crypto_toolkit.get_crypto_orderbook_depth,
                     self.crypto_toolkit.get_crypto_whale_trades,
-                    self.crypto_toolkit.get_crypto_open_interest
+                    self.crypto_toolkit.get_crypto_open_interest,
+                    self.crypto_toolkit.get_crypto_funding_rate,  # 资金费率
+                    self.crypto_toolkit.get_crypto_long_short_ratio,  # 多空比
+                    self.crypto_toolkit.get_crypto_liquidations,  # 清算数据
+                    self.crypto_toolkit.get_crypto_market_sentiment  # 市场情绪
                 ])
             
             return base_tools
@@ -548,11 +552,10 @@ class CryptoAwareToolkit(Toolkit):
         elif analyst_type == "fundamentals":
             # 基本面分析师工具（仅股票）
             if asset_type == "crypto":
-                # 加密货币不需要传统基本面分析，但可以获取一些特殊数据
+                # 加密货币不需要传统基本面分析，返回市场情绪相关工具
                 return [
-                    self.crypto_toolkit.get_crypto_funding_rate,
-                    self.crypto_toolkit.get_crypto_long_short_ratio,
-                    self.crypto_toolkit.get_crypto_market_sentiment
+                    self.crypto_toolkit.get_crypto_market_sentiment,
+                    self.get_finnhub_news  # 新闻对基本面分析仍然重要
                 ]
             else:
                 return [

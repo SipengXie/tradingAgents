@@ -1,6 +1,7 @@
 import chromadb
 from chromadb.config import Settings
 from openai import OpenAI
+import os
 
 
 class FinancialSituationMemory:
@@ -26,11 +27,23 @@ class FinancialSituationMemory:
         else:
             self.embedding_client = OpenAI(base_url=embedding_url)
         
-        self.chroma_client = chromadb.Client(Settings(allow_reset=True))
+        # 设置持久化目录路径
+        persist_directory = config.get("memory_persist_dir", 
+                                      os.path.join(config.get("project_dir", "."), "memory_db"))
+        
+        # 确保目录存在
+        os.makedirs(persist_directory, exist_ok=True)
+        
+        # 使用 PersistentClient 实现持久化存储
+        self.chroma_client = chromadb.PersistentClient(
+            path=persist_directory,
+            settings=Settings(allow_reset=True)
+        )
+        
         try:
             self.situation_collection = self.chroma_client.create_collection(name=name)
         except Exception:
-            # Si la colección ya existe, la obtenemos en lugar de crearla
+            # 如果集合已存在，获取它而不是创建
             self.situation_collection = self.chroma_client.get_collection(name=name)
     
     def reset_collection(self):
@@ -97,7 +110,10 @@ class FinancialSituationMemory:
 
 if __name__ == "__main__":
     # Example usage
-    matcher = FinancialSituationMemory()
+    from tradingagents.default_config import DEFAULT_CONFIG
+    
+    # 使用默认配置进行测试
+    matcher = FinancialSituationMemory("test_memory", DEFAULT_CONFIG)
 
     # Example data
     example_data = [

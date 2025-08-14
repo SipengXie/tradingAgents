@@ -65,6 +65,19 @@ def create_market_analyst(llm, toolkit):
       - symbol={ticker}
       - period="5m"
       - limit=48
+   f) get_crypto_funding_rate：
+      - symbol={ticker}
+      - limit=100
+   g) get_crypto_long_short_ratio：
+      - symbol={ticker}
+      - period="1h"
+      - limit=30
+   h) get_crypto_liquidations：
+      - symbol={ticker}
+      - limit=100
+   i) get_crypto_market_sentiment：
+      - symbol={ticker}
+      - source="funding"
 4. 如果某个工具调用失败，记录失败原因但继续执行其他分析
 
 **时间范围设定**：

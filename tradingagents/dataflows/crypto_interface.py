@@ -16,6 +16,37 @@ from .finnhub_utils import get_data_in_range
 logger = logging.getLogger(__name__)
 
 
+def convert_to_binance_symbol(symbol: str) -> str:
+    """
+    将各种格式转换为Binance标准格式
+    
+    支持的转换：
+    - ETH-USD -> ETHUSDT
+    - BTC/USD -> BTCUSDT
+    - eth-usd -> ETHUSDT
+    """
+    symbol = symbol.upper().strip()
+    
+    # 处理 XXX-USD 格式
+    if '-USD' in symbol:
+        return symbol.replace('-USD', 'USDT')
+    
+    # 处理 XXX/USD 格式
+    if '/USD' in symbol:
+        return symbol.replace('/USD', 'USDT')
+    
+    # 处理 XXX-USDT 格式（保持不变）
+    if '-USDT' in symbol:
+        return symbol.replace('-', '')
+    
+    # 处理 XXX/USDT 格式
+    if '/USDT' in symbol:
+        return symbol.replace('/', '')
+    
+    # 如果已经是正确格式（如BTCUSDT），直接返回
+    return symbol
+
+
 def handle_crypto_errors(func):
     """
     装饰器：处理加密货币数据获取的错误
@@ -78,7 +109,7 @@ def get_binance_market_data(
     获取Binance市场数据并格式化为CSV字符串
     
     Args:
-        symbol: 交易对（如 BTCUSDT）
+        symbol: 交易对（支持多种格式：ETH-USD, ETHUSDT等）
         start_date: 开始日期 (yyyy-mm-dd)
         end_date: 结束日期 (yyyy-mm-dd)
         interval: K线间隔
@@ -86,12 +117,14 @@ def get_binance_market_data(
     Returns:
         格式化的CSV字符串
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
         # 获取K线数据
         klines = api.get_historical_klines(
-            symbol=symbol.upper(),
+            symbol=binance_symbol,
             interval=interval,
             start_str=start_date,
             end_str=end_date
@@ -223,18 +256,20 @@ def get_binance_funding_rate(symbol: str, limit: int = 100) -> str:
     获取永续合约资金费率
     
     Args:
-        symbol: 永续合约交易对
+        symbol: 永续合约交易对（支持多种格式）
         limit: 返回记录数
     
     Returns:
         格式化的资金费率数据
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
         # 获取资金费率历史
         funding_rates = api.futures_funding_rate(
-            symbol=symbol,
+            symbol=binance_symbol,
             limit=limit
         )
         
@@ -274,16 +309,18 @@ def get_binance_orderbook(symbol: str, limit: int = 20) -> str:
     获取订单簿深度数据
     
     Args:
-        symbol: 交易对
+        symbol: 交易对（支持多种格式）
         limit: 深度档位
     
     Returns:
         格式化的订单簿数据
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
-        depth = api.get_order_book(symbol=symbol, limit=limit)
+        depth = api.get_order_book(symbol=binance_symbol, limit=limit)
         
         # 分析买卖盘
         bids = pd.DataFrame(depth['bids'], columns=['price', 'quantity'])
@@ -344,12 +381,14 @@ def get_binance_liquidations(
     
     注意：需要期货API权限
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
         # 构建参数
         params = {
-            'symbol': symbol,
+            'symbol': binance_symbol,
             'limit': min(limit, 1000)  # API限制最多1000条
         }
         
@@ -422,15 +461,17 @@ def get_binance_open_interest(symbol: str, period: str = "1h", limit: int = 30) 
     
     注意：需要期货API权限
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
         # 获取当前持仓量
-        current_oi = api.futures_open_interest(symbol=symbol)
+        current_oi = api.futures_open_interest(symbol=binance_symbol)
         
         # 获取历史持仓量
         historical_oi = api.futures_open_interest_hist(
-            symbol=symbol,
+            symbol=binance_symbol,
             period=period,
             limit=limit
         )
@@ -482,6 +523,8 @@ def get_binance_long_short_ratio(symbol: str, period: str = "1h", limit: int = 3
     
     注意：需要期货API权限
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
@@ -490,21 +533,21 @@ def get_binance_long_short_ratio(symbol: str, period: str = "1h", limit: int = 3
         
         # 1. 大户持仓量多空比
         position_ratio = api.futures_top_longshort_position_ratio(
-            symbol=symbol,
+            symbol=binance_symbol,
             period=period,
             limit=limit
         )
         
         # 2. 大户账户数多空比
         account_ratio = api.futures_top_longshort_account_ratio(
-            symbol=symbol,
+            symbol=binance_symbol,
             period=period,
             limit=limit
         )
         
         # 3. 全市场多空持仓人数比
         global_ratio = api.futures_global_longshort_ratio(
-            symbol=symbol,
+            symbol=binance_symbol,
             period=period,
             limit=limit
         )
@@ -579,7 +622,7 @@ def get_crypto_technical_analysis(
     计算技术指标
     
     Args:
-        symbol: 交易对
+        symbol: 交易对（支持多种格式）
         interval: K线间隔
         indicators: 要计算的指标列表
         start_date: 开始日期（格式：YYYY-MM-DD）
@@ -795,11 +838,13 @@ def get_binance_whale_trades(symbol: str, min_amount: float = 100000, limit: int
     """
     获取大额交易（鲸鱼交易）
     """
+    # 转换符号为Binance格式
+    binance_symbol = convert_to_binance_symbol(symbol)
     api = get_binance_api()
     
     try:
         # 获取最近成交
-        trades = api.get_recent_trades(symbol=symbol, limit=500)
+        trades = api.get_recent_trades(symbol=binance_symbol, limit=500)
         
         # 转换为DataFrame
         df = pd.DataFrame(trades)
@@ -885,8 +930,9 @@ def get_crypto_sentiment(symbol: str, source: str = "fear_greed") -> str:
             
             try:
                 # 获取最近的资金费率
+                binance_symbol = convert_to_binance_symbol(symbol)
                 funding_rates = api.futures_funding_rate(
-                    symbol=symbol,
+                    symbol=binance_symbol,
                     limit=72  # 最近3天，每8小时一次
                 )
                 

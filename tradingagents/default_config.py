@@ -14,8 +14,8 @@ DEFAULT_CONFIG = {
     ),
     # LLM settings
     "llm_provider": "openai",
-    "deep_think_llm": "openai/gpt-4.1",
-    "quick_think_llm": "openai/gpt-4.1-mini",
+    "deep_think_llm": "x-ai/grok-4",
+    "quick_think_llm": "google/gemini-2.5-flash",
     "backend_url": os.getenv("TRADINGAGENTS_BACKEND_URL", "https://openrouter.ai/api/v1"),
     # Embedding settings
     "embedding_url": os.getenv("TRADINGAGENTS_EMBEDDING_URL", "https://api.siliconflow.cn/v1"),

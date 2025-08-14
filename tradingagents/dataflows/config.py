@@ -27,7 +27,11 @@ def get_config() -> Dict:
     """Get the current configuration."""
     if _config is None:
         initialize_config()
-    return _config.copy()
+    config = _config.copy()
+    # 确保DATA_DIR总是存在
+    if 'DATA_DIR' not in config:
+        config['DATA_DIR'] = config.get('data_dir', './data')
+    return config
 
 
 # Initialize with default config
