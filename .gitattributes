@@ -3,18 +3,28 @@
 
 # Explicitly declare text files you want to always be normalized and converted
 # to native line endings on checkout.
-*.py text
-*.pyw text
-*.pyx text
-*.pyi text
-*.md text
-*.txt text
-*.yml text
-*.yaml text
-*.json text
-*.cfg text
-*.ini text
-*.toml text
+# Python files should use LF line endings for cross-platform compatibility
+*.py text eol=lf
+*.pyw text eol=lf
+*.pyx text eol=lf
+*.pyi text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.toml text eol=lf
+*.env text eol=lf
+*.env.* text eol=lf
+.env* text eol=lf
+*.requirements text eol=lf
+requirements*.txt text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
 *.sh text eol=lf
 *.bash text eol=lf
 
@@ -33,6 +43,8 @@
 *.pyc binary
 *.pyo binary
 *.pyd binary
+*.whl binary
+*.egg binary
 *.so binary
 *.exe binary
 *.dll binary

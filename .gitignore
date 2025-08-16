@@ -88,3 +88,4 @@ chroma_db/
 memory_data/
 model_cache/
 tradingagents/memory_db/chroma.sqlite3
+CLAUDE.local.md
