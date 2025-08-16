@@ -104,6 +104,111 @@ class ParadexDataManager:
         except Exception as e:
             return {"error": f"获取持仓信息失败: {str(e)}"}
 
+    def get_open_orders(self, market: Optional[str] = None) -> Dict[str, Any]:
+        """获取当前挂单信息
+        
+        Args:
+            market: 可选的市场符号（如 'BTC-USD-PERP'），不指定则返回所有市场的挂单
+            
+        Returns:
+            包含挂单信息的字典
+        """
+        if not _paradex_py_available:
+            return {"error": "Paradex SDK 不可用"}
+            
+        try:
+            self._initialize_client()
+            if not self.client:
+                return {"error": "Paradex 客户端未初始化"}
+                
+            # 构建查询参数
+            params = {}
+            if market:
+                params['market'] = market
+                
+            # 获取挂单数据
+            orders_response = self.client.api_client.fetch_orders(params=params)
+            
+            if not isinstance(orders_response, dict) or 'results' not in orders_response:
+                return {"error": "获取挂单数据格式错误"}
+                
+            orders = orders_response['results']
+            
+            # 过滤出活跃的挂单（未成交、未取消的订单）
+            active_orders = []
+            for order in orders:
+                status = order.get('status', '').upper()
+                # Paradex 的订单状态通常包括: OPEN, FILLED, CANCELLED, EXPIRED
+                if status in ['OPEN', 'PENDING', 'PARTIAL']:
+                    active_orders.append(order)
+            
+            # 分析挂单数据
+            analysis = self._analyze_open_orders(active_orders)
+            
+            return {
+                "success": True,
+                "total_orders": len(active_orders),
+                "analysis": analysis,
+                "orders": active_orders,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+        except Exception as e:
+            return {"error": f"获取挂单信息失败: {str(e)}"}
+    
+    def _analyze_open_orders(self, orders: List[Dict]) -> Dict[str, Any]:
+        """分析挂单数据"""
+        if not orders:
+            return {"message": "当前无挂单"}
+            
+        # 按市场统计
+        market_stats = {}
+        total_buy_orders = 0
+        total_sell_orders = 0
+        total_notional = 0.0
+        
+        for order in orders:
+            market = order.get('market', 'Unknown')
+            side = order.get('side', '').upper()
+            size = float(order.get('size', 0))
+            price = float(order.get('price', 0))
+            order_type = order.get('type', 'Unknown')
+            
+            if market not in market_stats:
+                market_stats[market] = {
+                    'orders': 0,
+                    'buy_orders': 0,
+                    'sell_orders': 0,
+                    'total_size': 0.0,
+                    'order_types': {}
+                }
+            
+            market_stats[market]['orders'] += 1
+            market_stats[market]['total_size'] += size
+            
+            if side == 'BUY':
+                total_buy_orders += 1
+                market_stats[market]['buy_orders'] += 1
+            else:
+                total_sell_orders += 1
+                market_stats[market]['sell_orders'] += 1
+                
+            # 统计订单类型
+            if order_type not in market_stats[market]['order_types']:
+                market_stats[market]['order_types'][order_type] = 0
+            market_stats[market]['order_types'][order_type] += 1
+            
+            # 计算名义价值
+            total_notional += size * price
+        
+        return {
+            "total_buy_orders": total_buy_orders,
+            "total_sell_orders": total_sell_orders,
+            "total_notional_value": total_notional,
+            "market_breakdown": market_stats,
+            "unique_markets": len(market_stats)
+        }
+
     def get_trading_history(self, limit: int = 20, days: int = 30) -> Dict[str, Any]:
         """获取交易历史摘要"""
         if not _paradex_py_available:
@@ -409,6 +514,54 @@ def format_trading_history_for_trader(history_data: Dict[str, Any]) -> str:
                 result += f"{i}. {timestamp.strftime('%m-%d %H:%M')} {symbol} {side} {size} @ {price}\n"
     
     result += f"\n🕒 数据时间: {history_data.get('timestamp', 'N/A')}\n"
+    return result
+
+
+def format_open_orders_for_trader(orders_data: Dict[str, Any]) -> str:
+    """为交易员智能体格式化挂单数据"""
+    if orders_data.get("error"):
+        return f"⚠️ Paradex 挂单数据获取失败: {orders_data['error']}"
+    
+    if not orders_data.get("success"):
+        return "⚠️ 无法获取 Paradex 挂单数据"
+    
+    result = "=== 📋 Paradex 当前挂单状况 ===\n"
+    
+    total_orders = orders_data.get("total_orders", 0)
+    
+    if total_orders == 0:
+        result += "📭 当前无挂单\n"
+    else:
+        analysis = orders_data.get("analysis", {})
+        buy_orders = analysis.get("total_buy_orders", 0)
+        sell_orders = analysis.get("total_sell_orders", 0)
+        total_notional = analysis.get("total_notional_value", 0)
+        
+        result += f"📊 挂单统计:\n"
+        result += f"• 总挂单数: {total_orders} 笔\n"
+        result += f"• 买单/卖单: {buy_orders}/{sell_orders} 笔\n"
+        result += f"• 总名义价值: {total_notional:,.2f} USDC\n\n"
+        
+        # 显示挂单详情
+        orders = orders_data.get("orders", [])
+        if orders:
+            result += "【挂单详情】\n"
+            for i, order in enumerate(orders[:10], 1):  # 最多显示10个挂单
+                order_id = order.get('id', 'Unknown')[:8]  # 显示订单ID前8位
+                market = order.get('market', 'Unknown')
+                side = order.get('side', 'Unknown')
+                order_type = order.get('type', 'LIMIT')
+                size = order.get('size', '0')
+                price = order.get('price', '0')
+                filled = order.get('filled_size', '0')
+                status = order.get('status', 'Unknown')
+                
+                result += f"{i}. [{order_id}] {market}: {side} {order_type} {size} @ {price}"
+                if float(filled) > 0:
+                    result += f" (已成交: {filled})"
+                result += f" - {status}\n"
+    
+    result += f"\n🕒 数据时间: {orders_data.get('timestamp', 'N/A')}\n"
     return result
 
 

@@ -4,7 +4,8 @@ from ..utils.paradex_tools import (
     get_paradex_manager, 
     format_positions_for_trader,
     format_trading_history_for_trader,
-    format_portfolio_insights_for_trader
+    format_portfolio_insights_for_trader,
+    format_open_orders_for_trader
 )
 
 def create_chat_trader(llm):
@@ -30,10 +31,15 @@ def create_chat_trader(llm):
             positions_text = format_positions_for_trader(portfolio_overview.get("positions_summary", {}))
             history_text = format_trading_history_for_trader(portfolio_overview.get("trading_summary", {}))
             insights_text = format_portfolio_insights_for_trader(portfolio_overview)
+            
+            # 获取挂单数据
+            open_orders = paradex_manager.get_open_orders()
+            orders_text = format_open_orders_for_trader(open_orders)
         except Exception as e:
             positions_text = f"⚠️ 获取 Paradex 数据失败: {str(e)}"
             history_text = ""
             insights_text = ""
+            orders_text = ""
 
         system_prompt = f"""重要提示：务必用中文回复！
         
@@ -47,6 +53,8 @@ def create_chat_trader(llm):
 
 === 🔴 重要：用户实际交易数据 ===
 {positions_text}
+
+{orders_text}
 
 {history_text}
 
