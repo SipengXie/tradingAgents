@@ -41,6 +41,13 @@ class ParadexDataManager:
             return
             
         try:
+            # 确保当前线程有事件循环
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
             l1_address = os.getenv('PARADEX_ADDR')
             l1_private_key = os.getenv('PARADEX_KEY')
             
