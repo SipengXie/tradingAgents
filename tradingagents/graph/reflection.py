@@ -79,6 +79,7 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
             "BULL", bull_debate_history, situation, returns_losses
         )
         bull_memory.add_situations([(situation, result)])
+        return result
 
     def reflect_bear_researcher(self, current_state, returns_losses, bear_memory):
         """Reflect on bear researcher's analysis and update memory."""
@@ -89,16 +90,18 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
             "BEAR", bear_debate_history, situation, returns_losses
         )
         bear_memory.add_situations([(situation, result)])
+        return result
 
     def reflect_trader(self, current_state, returns_losses, trader_memory):
         """Reflect on trader's decision and update memory."""
         situation = self._extract_current_situation(current_state)
-        trader_decision = current_state["trader_investment_plan"]
+        trader_decision = current_state.get("trader_investment_plan", current_state.get("trader_investment_decision"))
 
         result = self._reflect_on_component(
             "TRADER", trader_decision, situation, returns_losses
         )
         trader_memory.add_situations([(situation, result)])
+        return result
 
     def reflect_invest_judge(self, current_state, returns_losses, invest_judge_memory):
         """Reflect on investment judge's decision and update memory."""
@@ -109,6 +112,7 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
             "INVEST JUDGE", judge_decision, situation, returns_losses
         )
         invest_judge_memory.add_situations([(situation, result)])
+        return result
 
     def reflect_risk_manager(self, current_state, returns_losses, risk_manager_memory):
         """Reflect on risk manager's decision and update memory."""
@@ -119,3 +123,4 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
             "RISK JUDGE", judge_decision, situation, returns_losses
         )
         risk_manager_memory.add_situations([(situation, result)])
+        return result

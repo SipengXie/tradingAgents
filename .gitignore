@@ -87,5 +87,6 @@ chroma_db/
 # Model outputs and memory
 memory_data/
 model_cache/
-tradingagents/memory_db/chroma.sqlite3
+tradingagents/memory_db/*
 CLAUDE.local.md
+.serena/

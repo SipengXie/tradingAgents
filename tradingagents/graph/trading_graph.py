@@ -1,6 +1,7 @@
 # TradingAgents/graph/trading_graph.py
 
 import os
+import uuid
 from pathlib import Path
 import json
 from datetime import date
@@ -106,7 +107,6 @@ class TradingAgentsGraph:
         # State tracking
         self.curr_state = None
         self.ticker = None
-        self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph
         self.graph = self.graph_setup.setup_graph(selected_analysts)
@@ -179,6 +179,7 @@ class TradingAgentsGraph:
         """Run the trading agents graph for a company on a specific date."""
 
         self.ticker = company_name
+        decision_id = str(uuid.uuid4())
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
@@ -205,16 +206,17 @@ class TradingAgentsGraph:
         self.curr_state = final_state
 
         # Log state
-        self._log_state(trade_date, final_state)
+        self._log_state(trade_date, final_state, decision_id)
 
         # Return decision and processed signal
         return final_state, self.process_signal(final_state["final_trade_decision"])
 
-    def _log_state(self, trade_date, final_state):
+    def _log_state(self, trade_date, final_state, decision_id):
         """Log the final state to a JSON file."""
-        self.log_states_dict[str(trade_date)] = {
+        log_entry = {
+            "decision_id": decision_id,
             "company_of_interest": final_state["company_of_interest"],
-            "trade_date": final_state["trade_date"],
+            "trade_date": str(trade_date),
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
@@ -230,7 +232,7 @@ class TradingAgentsGraph:
                     "judge_decision"
                 ],
             },
-            "trader_investment_decision": final_state["trader_investment_plan"],
+            "trader_investment_plan": final_state["trader_investment_plan"],
             "risk_debate_state": {
                 "risky_history": final_state["risk_debate_state"]["risky_history"],
                 "safe_history": final_state["risk_debate_state"]["safe_history"],
@@ -250,7 +252,7 @@ class TradingAgentsGraph:
             f"eval_results/{self.ticker}/TradingAgentsStrategy_logs/full_states_log_{trade_date}.json",
             "w",
         ) as f:
-            json.dump(self.log_states_dict, f, indent=4)
+            json.dump(log_entry, f, indent=4)
 
     def reflect_and_remember(self, returns_losses):
         """Reflect on decisions and update memory based on returns."""
@@ -269,6 +271,32 @@ class TradingAgentsGraph:
         self.reflector.reflect_risk_manager(
             self.curr_state, returns_losses, self.risk_manager_memory
         )
+
+    def reflect_on_past_decision(self, past_state, returns_losses):
+        """
+        Reflects on a past decision using a historical state and real-world PnL,
+        and returns the generated reflections for logging.
+        """
+        reflections = {}
+
+        # Each of these calls will now return the reflection report string
+        reflections["bull_researcher"] = self.reflector.reflect_bull_researcher(
+            past_state, returns_losses, self.bull_memory
+        )
+        reflections["bear_researcher"] = self.reflector.reflect_bear_researcher(
+            past_state, returns_losses, self.bear_memory
+        )
+        reflections["trader"] = self.reflector.reflect_trader(
+            past_state, returns_losses, self.trader_memory
+        )
+        reflections["invest_judge"] = self.reflector.reflect_invest_judge(
+            past_state, returns_losses, self.invest_judge_memory
+        )
+        reflections["risk_manager"] = self.reflector.reflect_risk_manager(
+            past_state, returns_losses, self.risk_manager_memory
+        )
+        
+        return reflections
 
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""
