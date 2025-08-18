@@ -170,6 +170,57 @@ if st.session_state.api_tested and st.session_state.api_test_results:
         
         st.divider()
 
+# --- 学习中心 ---
+with st.expander("🧠 学习中心 (Learning Center)", expanded=True):
+    from tradingagents.utils.learning_automation import LearningManager
+    learning_manager = LearningManager()
+
+    # 1. 批量学习功能
+    st.subheader("批量学习")
+    unlearned_trades = learning_manager.get_unlearned_trades()
+    unlearned_count = len(unlearned_trades)
+
+    if unlearned_count > 0:
+        st.info(f"发现 {unlearned_count} 条新的交易记录可供学习。")
+        if st.button("开始批量学习所有新经验"):
+            with st.spinner("正在处理交易并生成反思报告..."):
+                summary = learning_manager.learn_from_all_new_trades()
+                st.success(summary["message"])
+    else:
+        st.success("✅ 所有交易记录都已学习完毕。")
+
+    st.divider()
+
+    # 2. 学习报告浏览器
+    st.subheader("学习报告浏览器")
+    all_reports = learning_manager.get_all_learned_reports()
+    
+    agent_options = list(all_reports.keys())
+    selected_agent = st.selectbox("选择要查看的智能体记忆库", agent_options)
+
+    if selected_agent and all_reports[selected_agent]:
+        st.write(f"为 **{selected_agent}** 找到了 {len(all_reports[selected_agent])} 条学习记录。")
+        
+        # 分页
+        reports_per_page = 5
+        total_pages = (len(all_reports[selected_agent]) + reports_per_page - 1) // reports_per_page
+        page_number = st.number_input('页码', min_value=1, max_value=total_pages, value=1, step=1)
+        
+        start_index = (page_number - 1) * reports_per_page
+        end_index = start_index + reports_per_page
+        
+        for i, report in enumerate(all_reports[selected_agent][start_index:end_index]):
+            with st.expander(f"报告 #{start_index + i + 1}: Situation Snapshot"):
+                st.markdown("**[SITUATION]**")
+                st.text(report["situation"])
+                st.markdown("**[LEARNED REFLECTION]**")
+                st.text(report["reflection"])
+    else:
+        st.info(f"**{selected_agent}** 的记忆库中暂无记录。")
+
+st.divider()
+
+
 # --- 侧边栏配置 ---
 with st.sidebar:
     st.header("🔑 API 配置")
