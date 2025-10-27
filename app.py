@@ -1,18 +1,32 @@
 import streamlit as st
 import os
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
 import requests
 from openai import OpenAI
 import finnhub
 import json
+import re
+import asyncio
 from pathlib import Path
+
+# Add project root to sys.path
+project_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(project_root))
 
 # 导入交易框架所需的组件
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.trader.chat_trader import create_chat_trader
 from langchain_openai import ChatOpenAI
+
+# 导入手动学习功能
+try:
+    from scripts.learning_engine import list_available_decision_logs, manual_learning
+    MANUAL_LEARNING_AVAILABLE = True
+except ImportError:
+    MANUAL_LEARNING_AVAILABLE = False
 
 # API 测试函数
 def test_llm_api(backend_url, api_key, model):
@@ -63,20 +77,20 @@ def test_binance_api(api_key, api_secret):
     """测试 Binance API 是否可用"""
     try:
         from tradingagents.dataflows.binance_utils import BinanceAPIWrapper
-        
+
         # 创建 API 包装器
         api = BinanceAPIWrapper(api_key=api_key, api_secret=api_secret)
-        
+
         # 测试基本连接
         ping_result = api.ping()
         if ping_result != {}:
             return False, "Binance API ping 响应异常"
-        
+
         # 测试服务器时间
         server_time = api.get_server_time()
         if not server_time or 'serverTime' not in server_time:
             return False, "Binance API 服务器时间获取失败"
-        
+
         # 如果提供了密钥，测试认证
         if api_key and api_secret:
             try:
@@ -88,13 +102,114 @@ def test_binance_api(api_key, api_secret):
                 # 认证失败但基本连接成功
                 if "APIError" in str(auth_error):
                     return True, f"Binance API 连接成功（认证失败: {str(auth_error)[:50]}...）"
-        
+
         return True, "Binance API 连接成功（公共接口）"
-        
+
     except ImportError:
         return False, "Binance 库未安装，请运行: pip install python-binance"
     except Exception as e:
         return False, f"Binance API 连接失败: {str(e)}"
+
+# 手动学习辅助函数
+def format_file_size(size_bytes):
+    """格式化文件大小"""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+def format_decision_summary(log_data):
+    """生成决策摘要"""
+    try:
+        # 处理不同的日志格式
+        if isinstance(log_data, dict):
+            if 'decision_id' in log_data:
+                decision_data = log_data
+            else:
+                decision_data = next(iter(log_data.values())) if log_data else {}
+        else:
+            return "无法解析决策数据"
+
+        # 提取关键信息
+        market_analysis = decision_data.get('market_analysis', {})
+        trading_decision = decision_data.get('trading_decision', {})
+
+        summary_parts = []
+
+        if isinstance(market_analysis, dict):
+            trend = market_analysis.get('trend', 'Unknown')
+            summary_parts.append(f"趋势: {trend}")
+
+        if isinstance(trading_decision, dict):
+            action = trading_decision.get('action', 'Unknown')
+            confidence = trading_decision.get('confidence', 'Unknown')
+            summary_parts.append(f"操作: {action}")
+            summary_parts.append(f"置信度: {confidence}")
+
+        return " | ".join(summary_parts) if summary_parts else "无摘要信息"
+
+    except Exception as e:
+        return f"摘要生成错误: {str(e)}"
+
+
+def load_learning_records():
+    """加载所有手动学习记录"""
+    learning_records = []
+    eval_results_dir = Path("eval_results")
+
+    if not eval_results_dir.exists():
+        return learning_records
+
+    # 查找所有手动学习记录文件
+    for record_file in eval_results_dir.glob("manual_learning_*.json"):
+        try:
+            with open(record_file, 'r', encoding='utf-8') as f:
+                record = json.load(f)
+                record['file_name'] = record_file.name
+                record['file_path'] = str(record_file)
+                learning_records.append(record)
+        except Exception as e:
+            st.warning(f"无法读取学习记录文件 {record_file}: {e}")
+
+    # 按时间戳排序（最新的在前）
+    learning_records.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return learning_records
+
+
+def get_learned_decision_logs():
+    """获取已经学习过的决策日志路径集合"""
+    learned_logs = set()
+    learning_records = load_learning_records()
+
+    for record in learning_records:
+        if record.get('success') and record.get('decision_log_path'):
+            learned_logs.add(record['decision_log_path'])
+
+    return learned_logs
+
+
+def filter_unlearned_logs(all_logs):
+    """过滤出未学习过的决策日志"""
+    learned_logs = get_learned_decision_logs()
+    unlearned_logs = []
+
+    for log in all_logs:
+        if log.get('file_path') not in learned_logs:
+            unlearned_logs.append(log)
+
+    return unlearned_logs
+
+
+def mark_learned_logs(all_logs):
+    """标记已学习的决策日志"""
+    learned_logs = get_learned_decision_logs()
+
+    for log in all_logs:
+        log['is_learned'] = log.get('file_path') in learned_logs
+
+    return all_logs
 
 # --- Streamlit 页面配置 ---
 st.set_page_config(
@@ -172,51 +287,509 @@ if st.session_state.api_tested and st.session_state.api_test_results:
 
 # --- 学习中心 ---
 with st.expander("🧠 学习中心 (Learning Center)", expanded=True):
-    from tradingagents.utils.learning_automation import LearningManager
-    learning_manager = LearningManager()
+    if MANUAL_LEARNING_AVAILABLE:
+        # 学习中心选项卡
+        tab1, tab2, tab3 = st.tabs(["🎓 手动学习", "📚 学习报告浏览", "📊 自动学习状态"])
 
-    # 1. 批量学习功能
-    st.subheader("批量学习")
-    unlearned_trades = learning_manager.get_unlearned_trades()
-    unlearned_count = len(unlearned_trades)
+        with tab1:
 
-    if unlearned_count > 0:
-        st.info(f"发现 {unlearned_count} 条新的交易记录可供学习。")
-        if st.button("开始批量学习所有新经验"):
-            with st.spinner("正在处理交易并生成反思报告..."):
-                summary = learning_manager.learn_from_all_new_trades()
-                st.success(summary["message"])
+            # 初始化手动学习相关的session state
+            if 'manual_selected_log' not in st.session_state:
+                st.session_state.manual_selected_log = None
+            if 'manual_learning_in_progress' not in st.session_state:
+                st.session_state.manual_learning_in_progress = False
+            if 'manual_learning_result' not in st.session_state:
+                st.session_state.manual_learning_result = None
+            if 'manual_decision_logs' not in st.session_state:
+                st.session_state.manual_decision_logs = []
+            if 'show_learned_logs' not in st.session_state:
+                st.session_state.show_learned_logs = False
+
+            # 加载决策日志
+            @st.cache_data
+            def load_manual_decision_logs():
+                """加载所有可用的决策日志，并按日期从新到旧排序"""
+                try:
+                    logs = list_available_decision_logs() or []
+                    # 解析日期并排序（YYYY-MM-DD）
+                    def parse_date(d):
+                        try:
+                            return datetime.strptime(d, "%Y-%m-%d")
+                        except Exception:
+                            return datetime.min
+                    logs.sort(key=lambda x: parse_date(x.get('date', '1970-01-01')), reverse=True)
+                    # 标记已学习的日志
+                    logs = mark_learned_logs(logs)
+                    return logs
+                except Exception as e:
+                    st.error(f"加载决策日志失败: {e}")
+                    return []
+
+            # 如果还没有加载日志，则加载
+            if not st.session_state.manual_decision_logs:
+                st.session_state.manual_decision_logs = load_manual_decision_logs()
+
+            all_logs = st.session_state.manual_decision_logs
+
+            # 过滤选项
+            col_filter, col_refresh = st.columns([3, 1])
+            with col_filter:
+                show_learned = st.checkbox("显示已学习的日志", value=st.session_state.show_learned_logs, key="show_learned_checkbox")
+                st.session_state.show_learned_logs = show_learned
+
+            with col_refresh:
+                if st.button("🔄 刷新日志", key="refresh_logs"):
+                    # 清除缓存和 session state
+                    st.cache_data.clear()
+                    st.session_state.manual_decision_logs = []
+                    st.rerun()
+
+            # 根据过滤选项显示日志
+            if show_learned:
+                logs = all_logs
+            else:
+                logs = [log for log in all_logs if not log.get('is_learned', False)]
+
+        if not logs:
+            st.warning("⚠️ 没有找到决策日志文件")
+            st.info("请确保 eval_results 目录中存在决策日志文件")
+        else:
+            st.success(f"✅ 找到 {len(logs)} 个决策日志")
+
+            # 简化的日志选择
+            # 市场过滤
+            markets = list(set(log['market'] for log in logs))
+            selected_market = st.selectbox("选择市场", markets, key="manual_market")
+
+            # 过滤日志并按日期倒序
+            filtered_logs = [log for log in logs if log['market'] == selected_market]
+            def parse_date(d):
+                try:
+                    return datetime.strptime(d, "%Y-%m-%d")
+                except Exception:
+                    return datetime.min
+            filtered_logs.sort(key=lambda x: parse_date(x.get('date', '1970-01-01')), reverse=True)
+
+            # 日志选择（使用排序后的结果）
+            if filtered_logs:
+                def option_label(idx):
+                    log = filtered_logs[idx]
+                    did = log.get('decision_id') or 'Unknown'
+                    learned_status = "✅" if log.get('is_learned', False) else "🆕"
+                    return f"{learned_status} {log.get('date','Unknown')} | {did[:20]}..."
+                selected_index = st.selectbox(
+                    "选择决策日志",
+                    range(len(filtered_logs)),
+                    format_func=option_label,
+                    key="manual_log_select"
+                )
+
+                if st.button("选择此日志", key="manual_select_log"):
+                    st.session_state.manual_selected_log = filtered_logs[selected_index]
+                    st.rerun()
+
+            # 显示选中的日志和学习界面
+            if st.session_state.manual_selected_log:
+                selected_log = st.session_state.manual_selected_log
+                st.info(f"已选择: {selected_log['market']} - {selected_log['date']}")
+
+                # 加载并渲染日志内容
+                try:
+                    with open(selected_log['file_path'], 'r', encoding='utf-8') as f:
+                        log_data = json.load(f)
+                except Exception as e:
+                    log_data = None
+                    st.error(f"读取日志失败: {e}")
+
+                if log_data:
+                    # 兼容两种结构：直接是对象 或 {date: state}
+                    if isinstance(log_data, dict) and 'decision_id' in log_data:
+                        decision_data = log_data
+                    elif isinstance(log_data, dict):
+                        # 取第一个键值
+                        decision_data = next(iter(log_data.values())) if log_data else {}
+                    else:
+                        decision_data = {}
+
+                    # 关键信息
+                    with st.expander("🔑 关键信息", expanded=True):
+                        colk1, colk2 = st.columns(2)
+                        with colk1:
+                            st.write(f"决策ID: {decision_data.get('decision_id', 'Unknown')}")
+                            st.write(f"时间戳: {decision_data.get('timestamp', 'Unknown')}")
+                        with colk2:
+                            st.write(f"市场: {selected_log.get('market', 'Unknown')}")
+                            st.write(f"日期: {selected_log.get('date', 'Unknown')}")
+
+                    # 市场技术分析（若无专用字段则退化到 market_report 全文）
+                    market_report_text = decision_data.get('market_report')
+                    technical_analysis = (
+                        decision_data.get('market_technical_analysis')
+                        or decision_data.get('technical_analysis')
+                        or decision_data.get('market_analysis')
+                        or market_report_text
+                    )
+                    with st.expander("📊 市场技术分析", expanded=False):
+                        st.write(technical_analysis or "无市场技术分析信息")
+
+                    # 社交情绪分析
+                    sentiment_analysis = (
+                        decision_data.get('social_sentiment_analysis')
+                        or decision_data.get('sentiment_analysis')
+                        or decision_data.get('social_analysis')
+                        or decision_data.get('sentiment_report')
+                    )
+                    with st.expander("📱 社交情绪分析", expanded=False):
+                        st.write(sentiment_analysis or "无社交情绪分析信息")
+
+                    # 新闻分析
+                    news_analysis = (decision_data.get('news_analysis') or
+                                   decision_data.get('market_news') or
+                                   decision_data.get('news_report'))
+                    with st.expander("📰 新闻分析", expanded=False):
+                        st.write(news_analysis or "无新闻分析信息")
+
+                    # 研究员辩论 - 看涨 vs 看跌（来自 investment_debate_state）
+                    debate_state = decision_data.get('investment_debate_state') or {}
+                    bull_researcher = (
+                        debate_state.get('bull_history')
+                        or decision_data.get('bull_researcher')
+                        or decision_data.get('bull_analysis')
+                        or decision_data.get('bullish_view')
+                    )
+                    bear_researcher = (
+                        debate_state.get('bear_history')
+                        or decision_data.get('bear_researcher')
+                        or decision_data.get('bear_analysis')
+                        or decision_data.get('bearish_view')
+                    )
+                    with st.expander("⚖️ 研究员辩论 (看涨 vs 看跌)", expanded=False):
+                        if bull_researcher or bear_researcher:
+                            col_bull, col_bear = st.columns(2)
+                            with col_bull:
+                                st.markdown("**🐂 看涨观点:**")
+                                st.write(bull_researcher or "无看涨分析")
+                            with col_bear:
+                                st.markdown("**🐻 看跌观点:**")
+                                st.write(bear_researcher or "无看跌分析")
+                            if debate_state.get('current_response'):
+                                st.markdown("---")
+                                st.markdown("**综合结论/当前回复**")
+                                st.write(debate_state.get('current_response'))
+                        else:
+                            st.write("无研究员辩论信息")
+
+                    # 定义提取函数
+                    def extract_risk(text: str):
+                        if not text:
+                            return None
+                        # 支持中文、英文常见标题
+                        patterns = [
+                            r"[\n\r]+\*\*?风险管理[\u4e00-\u9fa5]*\*\*?[\s\S]*?(?=\n\*\*|\n##|$)",
+                            r"[\n\r]+\*\*?风险管理建议\*\*?[\s\S]*?(?=\n\*\*|\n##|$)",
+                            r"[\n\r]+\*\*?Risk Management\*\*?[\s\S]*?(?=\n\*\*|\n##|$)",
+                        ]
+                        for p in patterns:
+                            m = re.search(p, text)
+                            if m:
+                                return m.group(0).strip()
+                        return None
+
+                    def extract_proposal(text: str):
+                        if not text:
+                            return None
+                        patterns = [
+                            r"FINAL\s+TRADING\s+PROPOSAL[:：]\s*([A-Z\u4e00-\u9fa5a-z]+)",
+                            r"最终交易建(议|案)[:：]\s*([\u4e00-\u9fa5A-Za-z]+)",
+                            r"FINAL\s+TRADE\s+DECISION[:：]\s*([A-Z\u4e00-\u9fa5a-z]+)",
+                            r"最终交易决策[:：]\s*([\u4e00-\u9fa5A-Za-z]+)",
+                        ]
+                        for p in patterns:
+                            m = re.search(p, text)
+                            if m:
+                                # Join all groups as a concise proposal line
+                                return " ".join([g for g in m.groups() if g])
+                        return None
+
+                    # 风险管理评估
+                    risk_assessment = (
+                        decision_data.get('risk_management_assessment')
+                        or decision_data.get('risk_analysis')
+                        or decision_data.get('risk_management')
+                        or extract_risk(market_report_text)
+                    )
+                    with st.expander("🛡️ 风险管理评估", expanded=False):
+                        st.write(risk_assessment or "无风险管理评估信息")
+
+                    # 交易员提案
+                    trader_proposal = (
+                        decision_data.get('trader_proposal')
+                        or decision_data.get('trading_proposal')
+                        or decision_data.get('trading_decision')
+                        or decision_data.get('final_decision')
+                        or decision_data.get('final_trade_decision')
+                        or extract_proposal(market_report_text)
+                    )
+                    with st.expander("💼 交易员提案", expanded=False):
+                        st.write(trader_proposal or "无交易员提案信息")
+
+                    # 原始JSON
+                    with st.expander("📄 原始JSON", expanded=False):
+                        st.json(decision_data)
+
+                # PnL输入和学习执行
+                col_a, col_b = st.columns([1, 1])
+
+                with col_a:
+                    pnl_value = st.number_input(
+                        "输入实际盈亏值 (USDC)",
+                        value=0.0,
+                        step=0.01,
+                        format="%.4f",
+                        help="输入该决策对应的实际盈亏值，支持正负数",
+                        key="manual_pnl"
+                    )
+
+                with col_b:
+                    user_notes = st.text_area(
+                        "学习备注 (可选)",
+                        placeholder="添加关于此次学习的备注信息...",
+                        height=100,
+                        key="manual_notes"
+                    )
+
+                # 学习按钮和结果
+                if st.button("🎓 开始手动学习", type="primary",
+                           disabled=st.session_state.manual_learning_in_progress, key="manual_start_learning"):
+                    st.session_state.manual_learning_in_progress = True
+                    st.session_state.manual_learning_result = None
+
+                    with st.spinner("AI智能体正在进行反思学习..."):
+                        try:
+                            # 使用 asyncio.run() 来运行异步函数
+                            result = asyncio.run(manual_learning(
+                                st.session_state.manual_selected_log['file_path'],
+                                pnl_value,
+                                user_notes
+                            ))
+                            st.session_state.manual_learning_result = result
+                            st.session_state.manual_learning_in_progress = False
+                            st.success("✅ 手动学习完成！")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"学习过程中出现错误: {e}")
+                            st.session_state.manual_learning_in_progress = False
+
+                # 显示学习结果
+                if st.session_state.manual_learning_result:
+                    result = st.session_state.manual_learning_result
+
+                    if result.get('success'):
+                        st.success("🎯 学习结果")
+
+                        # 显示学习摘要
+                        col_x, col_y, col_z = st.columns(3)
+
+                        with col_x:
+                            st.metric("决策ID", result.get('decision_id', 'N/A'))
+
+                        with col_y:
+                            st.metric("输入PnL", f"{result.get('input_pnl', 0):.4f} USDC")
+
+                        with col_z:
+                            reflections = result.get('reflections', {})
+                            st.metric("学习组件", len(reflections))
+
+                        # 显示各组件的反思结果
+                        # 定义组件显示顺序和图标
+                        component_config = {
+                            'BULL_RESEARCHER': {'icon': '🐂', 'name': '看涨研究员'},
+                            'BEAR_RESEARCHER': {'icon': '🐻', 'name': '看跌研究员'},
+                            'TRADER': {'icon': '💼', 'name': '交易员'},
+                            'INVEST_JUDGE': {'icon': '⚖️', 'name': '投资判官'},
+                            'RISK_MANAGER': {'icon': '🛡️', 'name': '风险管理员'}
+                        }
+
+                        # 按预定义顺序显示组件反思
+                        for component_key in component_config.keys():
+                            if component_key in reflections:
+                                config = component_config[component_key]
+                                reflection = reflections[component_key]
+                                with st.expander(f"{config['icon']} {config['name']} ({component_key})", expanded=False):
+                                    if reflection:
+                                        st.write(reflection)
+                                    else:
+                                        st.write("无反思内容")
+
+                        # 显示其他未预定义的组件
+                        other_components = set(reflections.keys()) - set(component_config.keys())
+                        for component in other_components:
+                            reflection = reflections[component]
+                            with st.expander(f"🤖 {component.upper()}", expanded=False):
+                                if reflection:
+                                    st.write(reflection)
+                                else:
+                                    st.write("无反思内容")
+
+                        # 下载学习结果
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"manual_learning_{timestamp}.json"
+
+                        download_data = {
+                            "learning_session": {
+                                "timestamp": result.get('timestamp'),
+                                "decision_id": result.get('decision_id'),
+                                "input_pnl": result.get('input_pnl'),
+                                "user_notes": result.get('user_notes'),
+                                "selected_log": st.session_state.manual_selected_log
+                            },
+                            "reflections": reflections
+                        }
+
+                        st.download_button(
+                            label="📥 下载学习结果 (JSON)",
+                            data=json.dumps(download_data, indent=2, ensure_ascii=False),
+                            file_name=filename,
+                            mime="application/json",
+                            key="manual_download"
+                        )
+
+                        if st.button("🗑️ 清除学习结果", key="manual_clear_result"):
+                            st.session_state.manual_learning_result = None
+                            st.rerun()
+
+                    else:
+                        st.error("❌ 学习失败")
+                        st.error(f"错误信息: {result.get('error', '未知错误')}")
+
+                        if st.button("🔄 重试", key="manual_retry"):
+                            st.session_state.manual_learning_result = None
+                            st.rerun()
+
+        with tab2:
+            # 学习报告浏览选项卡
+            st.header("📚 学习报告浏览")
+
+            # 加载学习记录
+            learning_records = load_learning_records()
+
+            if not learning_records:
+                st.info("📝 还没有学习记录。完成手动学习后，记录将显示在这里。")
+            else:
+                st.success(f"✅ 找到 {len(learning_records)} 条学习记录")
+
+                # 搜索和过滤选项
+                col_search, col_filter = st.columns([2, 1])
+
+                with col_search:
+                    search_term = st.text_input("🔍 搜索学习记录", placeholder="输入决策ID、市场或日期...")
+
+                with col_filter:
+                    # PnL过滤
+                    pnl_filter = st.selectbox("PnL过滤", ["全部", "盈利 (>0)", "亏损 (<0)", "持平 (=0)"])
+
+                # 应用过滤
+                filtered_records = learning_records
+
+                if search_term:
+                    filtered_records = [
+                        record for record in filtered_records
+                        if search_term.lower() in str(record.get('decision_id', '')).lower()
+                        or search_term.lower() in str(record.get('market', '')).lower()
+                        or search_term.lower() in str(record.get('date', '')).lower()
+                    ]
+
+                if pnl_filter != "全部":
+                    if pnl_filter == "盈利 (>0)":
+                        filtered_records = [r for r in filtered_records if r.get('pnl_value', 0) > 0]
+                    elif pnl_filter == "亏损 (<0)":
+                        filtered_records = [r for r in filtered_records if r.get('pnl_value', 0) < 0]
+                    elif pnl_filter == "持平 (=0)":
+                        filtered_records = [r for r in filtered_records if r.get('pnl_value', 0) == 0]
+
+                # 显示过滤后的记录
+                if not filtered_records:
+                    st.warning("没有找到匹配的学习记录")
+                else:
+                    st.write(f"显示 {len(filtered_records)} 条记录")
+
+                    # 学习记录列表
+                    for i, record in enumerate(filtered_records):
+                        with st.expander(
+                            f"📖 {record.get('date', 'Unknown')} | "
+                            f"{record.get('market', 'Unknown')} | "
+                            f"PnL: {record.get('pnl_value', 0):.2f} | "
+                            f"{record.get('decision_id', 'Unknown')[:20]}...",
+                            expanded=False
+                        ):
+                            # 基本信息
+                            col_info1, col_info2 = st.columns(2)
+                            with col_info1:
+                                st.write(f"**决策ID:** {record.get('decision_id', 'Unknown')}")
+                                st.write(f"**市场:** {record.get('market', 'Unknown')}")
+                                st.write(f"**日期:** {record.get('date', 'Unknown')}")
+                            with col_info2:
+                                st.write(f"**PnL值:** {record.get('pnl_value', 0):.2f}")
+                                st.write(f"**学习时间:** {record.get('timestamp', 'Unknown')}")
+                                st.write(f"**状态:** {'✅ 成功' if record.get('success') else '❌ 失败'}")
+
+                            # 用户笔记
+                            if record.get('user_notes'):
+                                st.markdown("**📝 用户笔记:**")
+                                st.write(record.get('user_notes'))
+
+                            # AI组件反思
+                            reflections = record.get('reflections', {})
+                            if reflections:
+                                st.markdown("**🤖 AI组件反思:**")
+
+                                # 定义组件显示顺序和图标
+                                component_config = {
+                                    'BULL_RESEARCHER': {'icon': '🐂', 'name': '看涨研究员'},
+                                    'BEAR_RESEARCHER': {'icon': '🐻', 'name': '看跌研究员'},
+                                    'TRADER': {'icon': '💼', 'name': '交易员'},
+                                    'INVEST_JUDGE': {'icon': '⚖️', 'name': '投资判官'},
+                                    'RISK_MANAGER': {'icon': '🛡️', 'name': '风险管理员'}
+                                }
+
+                                # 按预定义顺序显示组件反思
+                                for component_key in component_config.keys():
+                                    if component_key in reflections:
+                                        config = component_config[component_key]
+                                        reflection = reflections[component_key]
+                                        with st.expander(f"{config['icon']} {config['name']}", expanded=False):
+                                            if reflection:
+                                                st.write(reflection)
+                                            else:
+                                                st.write("无反思内容")
+
+                                # 显示其他未预定义的组件
+                                other_components = set(reflections.keys()) - set(component_config.keys())
+                                for component in other_components:
+                                    reflection = reflections[component]
+                                    with st.expander(f"🤖 {component.upper()}", expanded=False):
+                                        if reflection:
+                                            st.write(reflection)
+                                        else:
+                                            st.write("无反思内容")
+
+                            # 下载按钮
+                            filename = f"learning_report_{record.get('decision_id', 'unknown')}_{record.get('date', 'unknown')}.json"
+                            st.download_button(
+                                label="📥 下载完整报告",
+                                data=json.dumps(record, indent=2, ensure_ascii=False),
+                                file_name=filename,
+                                mime="application/json",
+                                key=f"download_record_{i}"
+                            )
+
+        with tab3:
+            # 自动学习状态选项卡（保持原有内容）
+            st.header("📊 自动学习状态")
+            st.info("🚧 自动学习功能正在开发中...")
+
     else:
-        st.success("✅ 所有交易记录都已学习完毕。")
-
-    st.divider()
-
-    # 2. 学习报告浏览器
-    st.subheader("学习报告浏览器")
-    all_reports = learning_manager.get_all_learned_reports()
-    
-    agent_options = list(all_reports.keys())
-    selected_agent = st.selectbox("选择要查看的智能体记忆库", agent_options)
-
-    if selected_agent and all_reports[selected_agent]:
-        st.write(f"为 **{selected_agent}** 找到了 {len(all_reports[selected_agent])} 条学习记录。")
-        
-        # 分页
-        reports_per_page = 5
-        total_pages = (len(all_reports[selected_agent]) + reports_per_page - 1) // reports_per_page
-        page_number = st.number_input('页码', min_value=1, max_value=total_pages, value=1, step=1)
-        
-        start_index = (page_number - 1) * reports_per_page
-        end_index = start_index + reports_per_page
-        
-        for i, report in enumerate(all_reports[selected_agent][start_index:end_index]):
-            with st.expander(f"报告 #{start_index + i + 1}: Situation Snapshot"):
-                st.markdown("**[SITUATION]**")
-                st.text(report["situation"])
-                st.markdown("**[LEARNED REFLECTION]**")
-                st.text(report["reflection"])
-    else:
-        st.info(f"**{selected_agent}** 的记忆库中暂无记录。")
+        st.warning("⚠️ 手动学习功能不可用，请检查 scripts/learning_engine.py 是否存在")
 
 st.divider()
 

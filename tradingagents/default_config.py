@@ -19,7 +19,7 @@ DEFAULT_CONFIG = {
     ),
     # LLM settings
     "llm_provider": "openai",
-    "deep_think_llm": "x-ai/grok-4",
+    "deep_think_llm": "deepseek/deepseek-v3.2-exp",
     "quick_think_llm": "google/gemini-2.5-flash",
     "backend_url": os.getenv("TRADINGAGENTS_BACKEND_URL", "https://openrouter.ai/api/v1"),
     # Embedding settings
