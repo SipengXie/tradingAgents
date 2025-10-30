@@ -167,11 +167,10 @@ class TradingAgentsGraph:
                     self.toolkit.get_simfin_balance_sheet,
                     self.toolkit.get_simfin_cashflow,
                     self.toolkit.get_simfin_income_stmt,
-                ] + ([
-                    self.toolkit.crypto_toolkit.get_crypto_funding_rate,
-                    self.toolkit.crypto_toolkit.get_crypto_long_short_ratio,
-                    self.toolkit.crypto_toolkit.get_crypto_market_sentiment
-                ] if hasattr(self.toolkit, 'crypto_toolkit') else [])
+                ]
+                # 注意：加密货币基本面工具已通过 get_tools_for_analyst 接口动态选择
+                # 不再在这里硬编码添加衍生品工具（funding_rate, long_short_ratio 等）
+                # 这些工具更适合市场分析，已在 market ToolNode 中
             ),
         }
 
@@ -191,11 +190,14 @@ class TradingAgentsGraph:
             # Debug mode with tracing
             trace = []
             for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) == 0:
+                if len(chunk.get("messages", [])) == 0:
                     pass
                 else:
                     chunk["messages"][-1].pretty_print()
                     trace.append(chunk)
+
+            if not trace:
+                raise RuntimeError("Debug mode: No chunks with messages were produced")
 
             final_state = trace[-1]
         else:

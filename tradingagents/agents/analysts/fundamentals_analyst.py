@@ -9,27 +9,34 @@ def create_fundamentals_analyst(llm, toolkit):
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
 
-        # Detectar si es criptomoneda
-        is_crypto = ticker.endswith("-USD") or ticker.endswith("-EUR") or ticker.endswith("-USDT")
-        
-        if is_crypto:
-            # Para criptomonedas, usar herramientas adaptadas
-            if toolkit.config["online_tools"]:
-                tools = [toolkit.get_fundamentals_openai]  # Puede buscar info de crypto online
-            else:
-                tools = []  # Sin herramientas offline específicas para crypto
+        # 使用统一的工具选择接口
+        if hasattr(toolkit, 'get_tools_for_analyst'):
+            tools = toolkit.get_tools_for_analyst('fundamentals', ticker)
         else:
-            # Para acciones, usar herramientas tradicionales
-            if toolkit.config["online_tools"]:
-                tools = [toolkit.get_fundamentals_openai]
+            # 向后兼容：如果toolkit不支持新接口，使用原有逻辑
+            is_crypto = ticker.endswith("-USD") or ticker.endswith("-EUR") or ticker.endswith("-USDT")
+
+            if is_crypto:
+                # Para criptomonedas, usar herramientas adaptadas
+                if toolkit.config["online_tools"]:
+                    tools = [toolkit.get_fundamentals_openai]  # Puede buscar info de crypto online
+                else:
+                    tools = []  # Sin herramientas offline específicas para crypto
             else:
-                tools = [
-                    toolkit.get_finnhub_company_insider_sentiment,
-                    toolkit.get_finnhub_company_insider_transactions,
-                    toolkit.get_simfin_balance_sheet,
-                    toolkit.get_simfin_cashflow,
-                    toolkit.get_simfin_income_stmt,
-                ]
+                # Para acciones, usar herramientas tradicionales
+                if toolkit.config["online_tools"]:
+                    tools = [toolkit.get_fundamentals_openai]
+                else:
+                    tools = [
+                        toolkit.get_finnhub_company_insider_sentiment,
+                        toolkit.get_finnhub_company_insider_transactions,
+                        toolkit.get_simfin_balance_sheet,
+                        toolkit.get_simfin_cashflow,
+                        toolkit.get_simfin_income_stmt,
+                    ]
+
+        # 检测是否为加密货币以选择合适的system_message
+        is_crypto = ticker.endswith("-USD") or ticker.endswith("-EUR") or ticker.endswith("-USDT")
 
         if is_crypto:
             system_message = """**重要提示**：请务必使用中文回答，所有分析、报告和决策必须使用中文。
@@ -129,6 +136,9 @@ def create_fundamentals_analyst(llm, toolkit):
 
         if len(result.tool_calls) == 0:
             report = result.content
+        else:
+            # 工具被调用时，保留result.content或设置适当的标记
+            report = result.content if result.content else ""
 
         return {
             "messages": [result],

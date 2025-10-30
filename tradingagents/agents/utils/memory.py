@@ -56,11 +56,37 @@ class FinancialSituationMemory:
 
     def get_embedding(self, text):
         """Get OpenAI embedding for a text"""
-        
-        response = self.embedding_client.embeddings.create(
-            model=self.embedding, input=text
-        )
-        return response.data[0].embedding
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 验证输入
+        if not text or not isinstance(text, str):
+            logger.warning(f"Invalid text for embedding: {type(text)}")
+            return None
+
+        if len(text.strip()) == 0:
+            logger.warning("Empty text cannot create embedding")
+            return None
+
+        try:
+            response = self.embedding_client.embeddings.create(
+                model=self.embedding, input=text
+            )
+
+            # 验证响应
+            if not response or not hasattr(response, 'data') or not response.data:
+                logger.error("Embedding API returned empty response")
+                return None
+
+            if len(response.data) == 0:
+                logger.error("Embedding API returned no data")
+                return None
+
+            return response.data[0].embedding
+
+        except Exception as e:
+            logger.exception(f"Failed to create embedding: {e}")
+            return None
 
     def add_situations(self, situations_and_advice):
         """Add financial situations and their corresponding advice. Parameter is a list of tuples (situation, rec)"""
@@ -87,7 +113,14 @@ class FinancialSituationMemory:
 
     def get_memories(self, current_situation, n_matches=1):
         """Find matching recommendations using OpenAI embeddings"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         query_embedding = self.get_embedding(current_situation)
+
+        if query_embedding is None:
+            logger.warning("Failed to create query embedding, returning empty results")
+            return []
 
         results = self.situation_collection.query(
             query_embeddings=[query_embedding],

@@ -550,14 +550,18 @@ class CryptoAwareToolkit(Toolkit):
             return base_tools
             
         elif analyst_type == "fundamentals":
-            # 基本面分析师工具（仅股票）
+            # 基本面分析师工具
             if asset_type == "crypto":
-                # 加密货币不需要传统基本面分析，返回市场情绪相关工具
+                # 加密货币基本面分析：链上数据、代币经济学、开发活跃度
                 return [
-                    self.crypto_toolkit.get_crypto_market_sentiment,
+                    self.crypto_toolkit.get_crypto_onchain_metrics,      # 链上指标
+                    self.crypto_toolkit.get_crypto_tokenomics,           # 代币经济学
+                    self.crypto_toolkit.get_crypto_development_metrics,  # 开发活跃度
+                    self.crypto_toolkit.get_crypto_market_sentiment,     # 市场情绪
                     self.get_finnhub_news  # 新闻对基本面分析仍然重要
                 ]
             else:
+                # 股票基本面分析：财报、内部人士交易
                 return [
                     self.get_finnhub_company_insider_sentiment,
                     self.get_finnhub_company_insider_transactions,

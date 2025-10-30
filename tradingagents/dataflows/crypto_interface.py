@@ -132,23 +132,89 @@ def get_binance_market_data(
         
         if not klines:
             return f"未找到 {symbol} 在 {start_date} 到 {end_date} 期间的数据"
-        
+
+        # 数据结构验证
+        expected_columns = 12
+        for i, kline in enumerate(klines):
+            if not isinstance(kline, list):
+                logger.error(f"K线数据格式错误，索引{i}不是列表: {type(kline)}")
+                return f"数据格式错误: K线数据格式不正确"
+
+            if len(kline) != expected_columns:
+                logger.error(f"K线数据列数错误，索引{i}有{len(kline)}列，期望{expected_columns}列")
+                return f"数据格式错误: K线数据列数不匹配（期望{expected_columns}列，实际{len(kline)}列）"
+
         # 转换为DataFrame
-        df = pd.DataFrame(klines, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_volume', 'trades', 'taker_buy_volume',
-            'taker_buy_quote_volume', 'ignore'
-        ])
-        
+        try:
+            df = pd.DataFrame(klines, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_volume', 'trades', 'taker_buy_volume',
+                'taker_buy_quote_volume', 'ignore'
+            ])
+        except Exception as e:
+            logger.error(f"创建DataFrame失败: {e}")
+            return f"数据处理错误: 无法创建数据表 - {str(e)}"
+
         # 转换时间戳
-        df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
-        
+        try:
+            df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+        except Exception as e:
+            logger.error(f"时间戳转换失败: {e}")
+            return f"数据处理错误: 时间戳格式不正确"
+
         # 转换数值类型
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume', 
-                         'quote_volume', 'trades', 'taker_buy_volume', 
+        numeric_columns = ['open', 'high', 'low', 'close', 'volume',
+                         'quote_volume', 'trades', 'taker_buy_volume',
                          'taker_buy_quote_volume']
+
         for col in numeric_columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # 数据质量检查
+        null_counts = df[numeric_columns].isnull().sum()
+        total_rows = len(df)
+
+        for col in numeric_columns:
+            null_ratio = null_counts[col] / total_rows
+            if null_ratio > 0.1:  # 超过10%的空值
+                logger.warning(f"{symbol} 数据列 {col} 有 {null_ratio:.1%} 的空值")
+
+        # 检查价格数据的合理性
+        if 'close' in df.columns:
+            # 删除空值行
+            df_clean = df.dropna(subset=['close'])
+
+            if len(df_clean) == 0:
+                return f"数据错误: 所有价格数据都无效"
+
+            # 检查价格是否为正数
+            if (df_clean['close'] <= 0).any():
+                logger.warning(f"{symbol} 存在非正价格数据")
+                df = df[df['close'] > 0]
+
+            # 检查价格异常波动（单日涨跌超过100%可能是数据错误）
+            price_change = df_clean['close'].pct_change().abs()
+            if (price_change > 1.0).any():
+                extreme_changes = price_change[price_change > 1.0]
+                logger.warning(f"{symbol} 存在异常价格波动: 最大变化 {extreme_changes.max():.1%}")
+
+        # 验证OHLC逻辑关系
+        invalid_ohlc = (
+            (df['high'] < df['low']) |
+            (df['high'] < df['open']) |
+            (df['high'] < df['close']) |
+            (df['low'] > df['open']) |
+            (df['low'] > df['close'])
+        )
+
+        if invalid_ohlc.any():
+            invalid_count = invalid_ohlc.sum()
+            logger.warning(f"{symbol} 有 {invalid_count} 条K线数据的OHLC关系不合理")
+            # 移除这些异常数据
+            df = df[~invalid_ohlc]
+
+        if len(df) == 0:
+            return f"数据错误: 所有数据都未通过验证"
         
         # 选择输出列
         output_df = df[['date', 'open', 'high', 'low', 'close', 'volume', 
@@ -346,11 +412,13 @@ def get_binance_orderbook(symbol: str, limit: int = 20) -> str:
         output = f"# {symbol} 订单簿深度分析\n"
         output += f"# 买盘总量: {bid_volume:.4f} ({bid_value:.2f} USDT)\n"
         output += f"# 卖盘总量: {ask_volume:.4f} ({ask_value:.2f} USDT)\n"
-        # 避免除零错误
-        if ask_volume > 0:
+        # 安全的买卖比计算（避免除零错误）
+        if ask_volume > 0 and bid_volume > 0:
             output += f"# 买卖比: {bid_volume/ask_volume:.2f}\n"
-        elif bid_volume > 0:
+        elif ask_volume == 0 and bid_volume > 0:
             output += f"# 买卖比: ∞ (无卖盘)\n"
+        elif ask_volume > 0 and bid_volume == 0:
+            output += f"# 买卖比: 0 (无买盘)\n"
         else:
             output += f"# 买卖比: N/A (无挂单)\n"
         output += f"# 最高买价: {bids.iloc[0]['price']:.2f}\n"
@@ -724,19 +792,23 @@ def get_crypto_technical_analysis(
             output += f"中轨: {current_middle:.2f}\n"
             output += f"下轨: {current_lower:.2f}\n"
             output += f"当前价: {current_price:.2f}\n"
-            
-            band_width = (current_upper - current_lower) / current_middle * 100
-            output += f"带宽: {band_width:.2f}%\n"
-            
+
+            # 安全的带宽计算（避免除零错误）
+            if current_middle > 0:
+                band_width = (current_upper - current_lower) / current_middle * 100
+                output += f"带宽: {band_width:.2f}%\n"
+            else:
+                output += f"带宽: N/A (中轨为0)\n"
+
             if current_price > current_upper:
                 output += "位置: 上轨之上 (超买)\n"
             elif current_price < current_lower:
                 output += "位置: 下轨之下 (超卖)\n"
             else:
-                # 避免除零错误
-                band_width = current_upper - current_lower
-                if band_width > 0:
-                    position = (current_price - current_lower) / band_width * 100
+                # 安全的位置计算（避免除零错误）
+                band_range = current_upper - current_lower
+                if band_range > 0:
+                    position = (current_price - current_lower) / band_range * 100
                     output += f"位置: 带内 ({position:.1f}%)\n"
                 else:
                     output += "位置: 带内 (带宽为0)\n"
@@ -799,14 +871,33 @@ def get_crypto_technical_analysis(
 
 
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """计算RSI指标"""
+    """
+    计算RSI指标
+
+    使用安全的除零处理：当loss为0时，RSI应该为100（完全超买）
+    """
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    
-    # 避免除零错误
-    rs = gain / loss.where(loss != 0, 1e-10)  # 使用极小值替代0
+
+    # 安全的RS计算（避免除零错误）
+    # 当loss为0时，如果gain>0则RS=inf，RSI=100；如果gain=0则RSI=50
+    rs = pd.Series(index=gain.index, dtype=float)
+    mask_loss_zero = loss == 0
+    mask_gain_zero = gain == 0
+
+    # loss不为0的正常情况
+    rs[~mask_loss_zero] = gain[~mask_loss_zero] / loss[~mask_loss_zero]
+
+    # loss为0但gain>0：完全上涨，RSI=100
+    rs[mask_loss_zero & ~mask_gain_zero] = np.inf
+
+    # loss和gain都为0：价格无变化，RSI=50
+    rs[mask_loss_zero & mask_gain_zero] = 1.0
+
+    # 计算RSI
     rsi = 100 - (100 / (1 + rs))
+
     return rsi
 
 

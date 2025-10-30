@@ -315,7 +315,10 @@ def create_market_analyst(llm, toolkit):
 
         if len(result.tool_calls) == 0:
             report = result.content
-       
+        else:
+            # 工具被调用时，保留result.content或设置适当的标记
+            report = result.content if result.content else ""
+
         return {
             "messages": [result],
             "market_report": report,

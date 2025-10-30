@@ -247,16 +247,21 @@ class BinanceAPIWrapper:
 
 
 # 全局实例缓存
+import threading
 _api_wrapper_instance = None
+_api_wrapper_lock = threading.Lock()
 
 def get_binance_api() -> BinanceAPIWrapper:
     """
-    获取Binance API封装器的单例实例
-    
+    获取Binance API封装器的单例实例（线程安全）
+
     Returns:
         BinanceAPIWrapper实例
     """
     global _api_wrapper_instance
     if _api_wrapper_instance is None:
-        _api_wrapper_instance = BinanceAPIWrapper()
+        with _api_wrapper_lock:
+            # Double-checked locking
+            if _api_wrapper_instance is None:
+                _api_wrapper_instance = BinanceAPIWrapper()
     return _api_wrapper_instance

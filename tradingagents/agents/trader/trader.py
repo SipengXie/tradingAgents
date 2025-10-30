@@ -11,12 +11,12 @@ from ..utils.paradex_tools import (
 
 def create_trader(llm, memory):
     def trader_node(state, name):
-        company_name = state["company_of_interest"]
-        investment_plan = state["investment_plan"]
-        market_research_report = state["market_report"]
-        sentiment_report = state["sentiment_report"]
-        news_report = state["news_report"]
-        fundamentals_report = state["fundamentals_report"]
+        company_name = state.get("company_of_interest", "Unknown")
+        investment_plan = state.get("investment_plan", "No plan available")
+        market_research_report = state.get("market_report", "")
+        sentiment_report = state.get("sentiment_report", "")
+        news_report = state.get("news_report", "")
+        fundamentals_report = state.get("fundamentals_report", "")
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
@@ -32,12 +32,29 @@ def create_trader(llm, memory):
         paradex_data_str = ""
         try:
             paradex_manager = get_paradex_manager()
+            if paradex_manager is None:
+                raise ValueError("Paradex manager 初始化失败")
+
             portfolio_overview = paradex_manager.get_portfolio_overview()
-            
-            positions_text = format_positions_for_trader(portfolio_overview.get("positions_summary", {}))
-            history_text = format_trading_history_for_trader(portfolio_overview.get("trading_summary", {}))
+            if not portfolio_overview or not isinstance(portfolio_overview, dict):
+                raise ValueError("获取投资组合数据失败或数据格式错误")
+
+            # 安全地获取各个部分的数据
+            positions_summary = portfolio_overview.get("positions_summary")
+            trading_summary = portfolio_overview.get("trading_summary")
+
+            if positions_summary is None:
+                positions_summary = {}
+                logger.warning("Paradex positions_summary 为空，使用默认值")
+
+            if trading_summary is None:
+                trading_summary = {}
+                logger.warning("Paradex trading_summary 为空，使用默认值")
+
+            positions_text = format_positions_for_trader(positions_summary)
+            history_text = format_trading_history_for_trader(trading_summary)
             insights_text = format_portfolio_insights_for_trader(portfolio_overview)
-            
+
             paradex_data_str = f"""
 === 🔴 PARADEX 实际交易数据 ===
 {positions_text}
@@ -47,7 +64,8 @@ def create_trader(llm, memory):
 {insights_text}
 """
         except Exception as e:
-            paradex_data_str = f"\n⚠️ Paradex 数据获取失败: {str(e)}\n"
+            logger.error(f"获取Paradex数据失败: {e}", exc_info=True)
+            paradex_data_str = f"\n⚠️ Paradex 数据获取失败: {str(e)}\n请检查：\n1. Paradex API配置是否正确\n2. 网络连接是否正常\n3. API密钥是否有效\n"
 
         context = {
             "role": "user",

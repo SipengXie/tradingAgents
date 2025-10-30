@@ -90,3 +90,4 @@ model_cache/
 tradingagents/memory_db/*
 CLAUDE.local.md
 .serena/
+.claude/*.backup

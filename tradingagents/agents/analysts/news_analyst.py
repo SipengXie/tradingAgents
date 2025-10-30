@@ -8,14 +8,19 @@ def create_news_analyst(llm, toolkit):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
 
-        if toolkit.config["online_tools"]:
-            tools = [toolkit.get_global_news_openai, toolkit.get_google_news]
+        # 使用统一的工具选择接口
+        if hasattr(toolkit, 'get_tools_for_analyst'):
+            tools = toolkit.get_tools_for_analyst('news', ticker)
         else:
-            tools = [
-                toolkit.get_finnhub_news,
-                toolkit.get_reddit_news,
-                toolkit.get_google_news,
-            ]
+            # 向后兼容：如果toolkit不支持新接口，使用原有逻辑
+            if toolkit.config["online_tools"]:
+                tools = [toolkit.get_global_news_openai, toolkit.get_google_news]
+            else:
+                tools = [
+                    toolkit.get_finnhub_news,
+                    toolkit.get_reddit_news,
+                    toolkit.get_google_news,
+                ]
 
         system_message = """**重要提示**：务必使用中文回答，所有分析、报告和决策均应使用中文。
 
@@ -115,6 +120,9 @@ def create_news_analyst(llm, toolkit):
 
         if len(result.tool_calls) == 0:
             report = result.content
+        else:
+            # 工具被调用时，保留result.content或设置适当的标记
+            report = result.content if result.content else ""
 
         return {
             "messages": [result],
