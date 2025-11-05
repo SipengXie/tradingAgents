@@ -15,17 +15,26 @@ class Reflector:
     def _get_reflection_prompt(self) -> str:
         """Get the system prompt for reflection."""
         return """
-You are an expert financial analyst tasked with reviewing trading decisions/analysis and providing a comprehensive, step-by-step analysis. 
+You are an expert financial analyst tasked with reviewing trading decisions/analysis and providing a comprehensive, step-by-step analysis.
 Your goal is to deliver detailed insights into investment decisions and highlight opportunities for improvement, adhering strictly to the following guidelines:
 
+IMPORTANT - Understanding PnL (Profit and Loss):
+   - The PnL value represents the ACTUAL REALIZED profit or loss in the trading account (e.g., +100 means gained 100 USDC, -50 means lost 50 USDC).
+   - To determine if a decision was correct, you MUST consider BOTH the recommended direction AND the PnL:
+     * If the recommendation was LONG (buy): PnL > 0 means CORRECT, PnL < 0 means INCORRECT
+     * If the recommendation was SHORT (sell): PnL > 0 means CORRECT, PnL < 0 means INCORRECT
+   - DO NOT confuse account PnL with asset price movement. A positive PnL from a SHORT position means the price went DOWN (which is profitable for shorts).
+
 1. Reasoning:
-   - For each trading decision, determine whether it was correct or incorrect. A correct decision results in an increase in returns, while an incorrect decision does the opposite.
+   - For each trading decision, determine whether it was correct or incorrect based on the PnL outcome relative to the recommended direction.
+   - First, identify what direction was recommended in the analysis/decision you are reviewing (LONG, SHORT, or NEUTRAL).
+   - Then, evaluate if the PnL confirms that recommendation was correct.
    - Analyze the contributing factors to each success or mistake. Consider:
      - Market intelligence.
      - Technical indicators.
      - Technical signals.
      - Price movement analysis.
-     - Overall market data analysis 
+     - Overall market data analysis
      - News analysis.
      - Social media and sentiment analysis.
      - Fundamental data analysis.
@@ -56,15 +65,25 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         return f"{curr_market_report}\n\n{curr_sentiment_report}\n\n{curr_news_report}\n\n{curr_fundamentals_report}"
 
     def _reflect_on_component(
-        self, component_type: str, report: str, situation: str, returns_losses
+        self, component_type: str, report: str, situation: str, returns_losses, final_decision: str = None
     ) -> str:
         """Generate reflection for a component."""
+        # 构建提示信息
+        prompt_parts = [f"Returns (PnL): {returns_losses}"]
+
+        # 如果有最终决策，添加到提示中
+        if final_decision:
+            prompt_parts.append(f"\nFinal Executed Decision: {final_decision}")
+            prompt_parts.append(f"\nThis Component's Analysis/Recommendation: {report}")
+            prompt_parts.append("\nIMPORTANT: Compare this component's recommendation with the final executed decision. If they differ, evaluate based on whether the FINAL DECISION was correct (not this component's recommendation).")
+        else:
+            prompt_parts.append(f"\nAnalysis/Decision: {report}")
+
+        prompt_parts.append(f"\nObjective Market Reports for Reference: {situation}")
+
         messages = [
             ("system", self.reflection_system_prompt),
-            (
-                "human",
-                f"Returns: {returns_losses}\n\nAnalysis/Decision: {report}\n\nObjective Market Reports for Reference: {situation}",
-            ),
+            ("human", "\n".join(prompt_parts)),
         ]
 
         result = self.quick_thinking_llm.invoke(messages).content
@@ -75,10 +94,19 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         situation = self._extract_current_situation(current_state)
         bull_debate_history = current_state["investment_debate_state"]["bull_history"]
 
+        # 获取最终执行的决策
+        final_decision = current_state.get("trader_investment_plan") or current_state.get("trader_investment_decision")
+
         result = self._reflect_on_component(
-            "BULL", bull_debate_history, situation, returns_losses
+            "BULL", bull_debate_history, situation, returns_losses, final_decision=final_decision
         )
-        bull_memory.add_situations([(situation, result)])
+
+        # 构建额外的metadata（包含decision_id）
+        extra_metadata = {}
+        if "decision_id" in current_state:
+            extra_metadata["decision_id"] = current_state["decision_id"]
+
+        bull_memory.add_situations([(situation, result)], extra_metadata=extra_metadata)
         return result
 
     def reflect_bear_researcher(self, current_state, returns_losses, bear_memory):
@@ -86,10 +114,19 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         situation = self._extract_current_situation(current_state)
         bear_debate_history = current_state["investment_debate_state"]["bear_history"]
 
+        # 获取最终执行的决策
+        final_decision = current_state.get("trader_investment_plan") or current_state.get("trader_investment_decision")
+
         result = self._reflect_on_component(
-            "BEAR", bear_debate_history, situation, returns_losses
+            "BEAR", bear_debate_history, situation, returns_losses, final_decision=final_decision
         )
-        bear_memory.add_situations([(situation, result)])
+
+        # 构建额外的metadata（包含decision_id）
+        extra_metadata = {}
+        if "decision_id" in current_state:
+            extra_metadata["decision_id"] = current_state["decision_id"]
+
+        bear_memory.add_situations([(situation, result)], extra_metadata=extra_metadata)
         return result
 
     def reflect_trader(self, current_state, returns_losses, trader_memory):
@@ -100,7 +137,13 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         result = self._reflect_on_component(
             "TRADER", trader_decision, situation, returns_losses
         )
-        trader_memory.add_situations([(situation, result)])
+
+        # 构建额外的metadata（包含decision_id）
+        extra_metadata = {}
+        if "decision_id" in current_state:
+            extra_metadata["decision_id"] = current_state["decision_id"]
+
+        trader_memory.add_situations([(situation, result)], extra_metadata=extra_metadata)
         return result
 
     def reflect_invest_judge(self, current_state, returns_losses, invest_judge_memory):
@@ -108,10 +151,19 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         situation = self._extract_current_situation(current_state)
         judge_decision = current_state["investment_debate_state"]["judge_decision"]
 
+        # 获取最终执行的决策
+        final_decision = current_state.get("trader_investment_plan") or current_state.get("trader_investment_decision")
+
         result = self._reflect_on_component(
-            "INVEST JUDGE", judge_decision, situation, returns_losses
+            "INVEST JUDGE", judge_decision, situation, returns_losses, final_decision=final_decision
         )
-        invest_judge_memory.add_situations([(situation, result)])
+
+        # 构建额外的metadata（包含decision_id）
+        extra_metadata = {}
+        if "decision_id" in current_state:
+            extra_metadata["decision_id"] = current_state["decision_id"]
+
+        invest_judge_memory.add_situations([(situation, result)], extra_metadata=extra_metadata)
         return result
 
     def reflect_risk_manager(self, current_state, returns_losses, risk_manager_memory):
@@ -119,8 +171,17 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         situation = self._extract_current_situation(current_state)
         judge_decision = current_state["risk_debate_state"]["judge_decision"]
 
+        # 获取最终执行的决策
+        final_decision = current_state.get("trader_investment_plan") or current_state.get("trader_investment_decision")
+
         result = self._reflect_on_component(
-            "RISK JUDGE", judge_decision, situation, returns_losses
+            "RISK JUDGE", judge_decision, situation, returns_losses, final_decision=final_decision
         )
-        risk_manager_memory.add_situations([(situation, result)])
+
+        # 构建额外的metadata（包含decision_id）
+        extra_metadata = {}
+        if "decision_id" in current_state:
+            extra_metadata["decision_id"] = current_state["decision_id"]
+
+        risk_manager_memory.add_situations([(situation, result)], extra_metadata=extra_metadata)
         return result

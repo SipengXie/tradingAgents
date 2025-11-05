@@ -258,7 +258,7 @@ async def manual_learning(decision_log_path: str, pnl_value: float, user_notes: 
             'success': True,
             'decision_id': decision_id,
             'decision_log_path': str(log_path),
-            'input_pnl': pnl_value,
+            'pnl_value': pnl_value,  # 统一使用 pnl_value 键名
             'user_notes': user_notes,
             'reflections': reflections,
             'timestamp': datetime.now().isoformat()

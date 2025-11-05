@@ -159,3 +159,223 @@ class LearningRecordManager:
         except Exception as e:
             errors.append(f"扫描学习记录时出错: {str(e)}")
             return deleted_count, errors
+
+    def preview_chromadb_deletion(self, decision_id: str, config: dict) -> dict:
+        """
+        预览删除某个decision_id对应的ChromaDB记录
+
+        Args:
+            decision_id: 决策ID
+            config: 项目配置
+
+        Returns:
+            预览结果字典，包含每个collection将删除的记录信息
+        """
+        try:
+            from tradingagents.agents.utils.memory import FinancialSituationMemory
+            import chromadb
+            from chromadb.config import Settings
+
+            # 获取ChromaDB客户端
+            persist_directory = config.get("memory_persist_dir",
+                                          Path(config.get("project_dir", ".")) / "memory_db")
+            chroma_client = chromadb.PersistentClient(
+                path=str(persist_directory),
+                settings=Settings(allow_reset=True)
+            )
+
+            memory_components = [
+                "bull_memory",
+                "bear_memory",
+                "trader_memory",
+                "invest_judge_memory",
+                "risk_manager_memory"
+            ]
+
+            preview_results = {}
+
+            for memory_name in memory_components:
+                try:
+                    collection = chroma_client.get_collection(name=memory_name)
+
+                    # 通过decision_id查询记录
+                    results = collection.get(
+                        where={"decision_id": decision_id},
+                        include=["metadatas", "documents"]
+                    )
+
+                    if results and results['ids']:
+                        preview_results[memory_name] = {
+                            "count": len(results['ids']),
+                            "ids": results['ids'],
+                            "sample_text": results['documents'][0][:200] + "..." if results['documents'] else ""
+                        }
+                    else:
+                        preview_results[memory_name] = {
+                            "count": 0,
+                            "ids": [],
+                            "sample_text": ""
+                        }
+
+                except Exception as e:
+                    preview_results[memory_name] = {
+                        "count": 0,
+                        "ids": [],
+                        "error": str(e)
+                    }
+
+            return {
+                "success": True,
+                "decision_id": decision_id,
+                "preview": preview_results,
+                "total_records": sum(r.get("count", 0) for r in preview_results.values())
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"预览失败: {str(e)}"
+            }
+
+    def delete_chromadb_records(self, decision_id: str, config: dict) -> dict:
+        """
+        删除某个decision_id对应的所有ChromaDB记录
+
+        Args:
+            decision_id: 决策ID
+            config: 项目配置
+
+        Returns:
+            删除结果字典
+        """
+        try:
+            import chromadb
+            from chromadb.config import Settings
+
+            # 获取ChromaDB客户端
+            persist_directory = config.get("memory_persist_dir",
+                                          Path(config.get("project_dir", ".")) / "memory_db")
+            chroma_client = chromadb.PersistentClient(
+                path=str(persist_directory),
+                settings=Settings(allow_reset=True)
+            )
+
+            memory_components = [
+                "bull_memory",
+                "bear_memory",
+                "trader_memory",
+                "invest_judge_memory",
+                "risk_manager_memory"
+            ]
+
+            deletion_results = {}
+            total_deleted = 0
+
+            for memory_name in memory_components:
+                try:
+                    collection = chroma_client.get_collection(name=memory_name)
+
+                    # 通过decision_id查询记录
+                    results = collection.get(
+                        where={"decision_id": decision_id}
+                    )
+
+                    if results and results['ids']:
+                        # 删除找到的记录
+                        collection.delete(ids=results['ids'])
+                        deleted_count = len(results['ids'])
+                        total_deleted += deleted_count
+
+                        deletion_results[memory_name] = {
+                            "deleted": deleted_count,
+                            "ids": results['ids']
+                        }
+                    else:
+                        deletion_results[memory_name] = {
+                            "deleted": 0,
+                            "ids": []
+                        }
+
+                except Exception as e:
+                    deletion_results[memory_name] = {
+                        "deleted": 0,
+                        "error": str(e)
+                    }
+
+            return {
+                "success": True,
+                "decision_id": decision_id,
+                "deletion_results": deletion_results,
+                "total_deleted": total_deleted
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"删除ChromaDB记录失败: {str(e)}"
+            }
+
+    def delete_learning_record_complete(self, record_file_path: str, config: dict) -> dict:
+        """
+        完整删除学习记录（JSON文件 + ChromaDB记录）
+
+        Args:
+            record_file_path: 学习记录JSON文件的完整路径
+            config: 项目配置
+
+        Returns:
+            删除结果字典
+        """
+        try:
+            record_path = Path(record_file_path)
+
+            if not record_path.exists():
+                return {
+                    "success": False,
+                    "error": "学习记录文件不存在"
+                }
+
+            # 读取学习记录获取decision_id
+            with open(record_path, 'r', encoding='utf-8') as f:
+                record = json.load(f)
+
+            decision_id = record.get('decision_id')
+
+            if not decision_id:
+                # 旧记录，没有decision_id，只能删除JSON文件
+                record_path.unlink()
+                return {
+                    "success": True,
+                    "is_legacy": True,
+                    "json_deleted": str(record_path.name),
+                    "chromadb_deleted": 0,
+                    "message": "⚠️ 旧记录（无decision_id），仅删除了JSON文件"
+                }
+
+            # 新记录，先删除ChromaDB数据
+            chromadb_result = self.delete_chromadb_records(decision_id, config)
+
+            if not chromadb_result.get('success'):
+                return {
+                    "success": False,
+                    "error": f"删除ChromaDB记录失败: {chromadb_result.get('error')}"
+                }
+
+            # 然后删除JSON文件
+            record_path.unlink()
+
+            return {
+                "success": True,
+                "is_legacy": False,
+                "decision_id": decision_id,
+                "json_deleted": str(record_path.name),
+                "chromadb_deleted": chromadb_result.get('total_deleted', 0),
+                "deletion_details": chromadb_result.get('deletion_results', {}),
+                "message": f"✅ 成功删除学习记录（ChromaDB: {chromadb_result.get('total_deleted', 0)}条, JSON: 1个文件）"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"删除学习记录失败: {str(e)}"
+            }

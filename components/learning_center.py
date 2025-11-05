@@ -314,7 +314,7 @@ def _render_learning_result(state_mgr):
             st.metric("决策ID", result.get('decision_id', 'N/A'))
 
         with col_y:
-            st.metric("输入PnL", f"{result.get('input_pnl', 0):.4f} USDC")
+            st.metric("输入PnL", f"{result.get('pnl_value', 0):.4f} USDC")
 
         with col_z:
             reflections = result.get('reflections', {})
@@ -332,7 +332,7 @@ def _render_learning_result(state_mgr):
             "learning_session": {
                 "timestamp": result.get('timestamp'),
                 "decision_id": result.get('decision_id'),
-                "input_pnl": result.get('input_pnl'),
+                "pnl_value": result.get('pnl_value'),
                 "user_notes": result.get('user_notes'),
                 "selected_log": state_mgr.manual_selected_log
             },
@@ -439,18 +439,169 @@ def render_learning_reports_tab():
                         st.markdown("**🤖 AI组件反思:**")
                         render_reflections(reflections, expanded=False)
 
-                    # 下载按钮
-                    filename = f"learning_report_{record.get('decision_id', 'unknown')}_{record.get('date', 'unknown')}.json"
-                    st.download_button(
-                        label="📥 下载完整报告",
-                        data=json.dumps(record, indent=2, ensure_ascii=False),
-                        file_name=filename,
-                        mime="application/json",
-                        key=f"download_record_{i}"
-                    )
+                    # 下载和删除按钮
+                    col_download, col_delete = st.columns([3, 1])
+
+                    with col_download:
+                        filename = f"learning_report_{record.get('decision_id', 'unknown')}_{record.get('date', 'unknown')}.json"
+                        st.download_button(
+                            label="📥 下载完整报告",
+                            data=json.dumps(record, indent=2, ensure_ascii=False),
+                            file_name=filename,
+                            mime="application/json",
+                            key=f"download_record_{i}"
+                        )
+
+                    with col_delete:
+                        _render_delete_button(record, i)
 
 
 def render_auto_learning_tab():
     """渲染自动学习状态选项卡"""
     st.header("📊 自动学习状态")
     st.info("🚧 自动学习功能正在开发中...")
+
+
+def _render_delete_button(record: dict, index: int):
+    """
+    渲染删除学习记录的按钮和确认流程
+
+    Args:
+        record: 学习记录数据
+        index: 记录索引（用于生成唯一key）
+    """
+    # 使用session_state跟踪删除状态
+    delete_key = f"delete_confirm_{index}"
+    preview_key = f"delete_preview_{index}"
+
+    if delete_key not in st.session_state:
+        st.session_state[delete_key] = False
+    if preview_key not in st.session_state:
+        st.session_state[preview_key] = None
+
+    # 第一步：删除按钮
+    if not st.session_state[delete_key]:
+        if st.button("🗑️ 删除", key=f"delete_btn_{index}", type="secondary"):
+            st.session_state[delete_key] = True
+            # 预览删除内容
+            _preview_deletion(record, preview_key)
+            st.rerun()
+    else:
+        # 第二步：显示预览和确认
+        preview_data = st.session_state[preview_key]
+
+        if preview_data:
+            decision_id = record.get('decision_id', 'Unknown')
+            is_legacy = not decision_id or decision_id == 'Unknown'
+
+            st.warning("⚠️ 确认删除学习记录？")
+
+            # 显示基本信息
+            st.write(f"**决策ID:** {decision_id}")
+            st.write(f"**市场:** {record.get('market', 'Unknown')}")
+            st.write(f"**日期:** {record.get('date', 'Unknown')}")
+
+            if is_legacy:
+                st.info("📌 这是旧记录（无decision_id），仅删除JSON文件")
+            else:
+                # 显示ChromaDB删除预览
+                st.write("**将删除以下ChromaDB数据:**")
+                for comp_name, comp_data in preview_data.get('preview', {}).items():
+                    count = comp_data.get('count', 0)
+                    if count > 0:
+                        st.write(f"• {comp_name}: {count}条记录")
+
+                total = preview_data.get('total_records', 0)
+                st.write(f"**总计:** {total}条ChromaDB记录 + 1个JSON文件")
+
+        # 确认和取消按钮
+        col_confirm, col_cancel = st.columns(2)
+
+        with col_confirm:
+            if st.button("✅ 确认删除", key=f"confirm_delete_{index}", type="primary"):
+                _execute_deletion(record)
+                st.session_state[delete_key] = False
+                st.session_state[preview_key] = None
+                st.rerun()
+
+        with col_cancel:
+            if st.button("❌ 取消", key=f"cancel_delete_{index}"):
+                st.session_state[delete_key] = False
+                st.session_state[preview_key] = None
+                st.rerun()
+
+
+def _preview_deletion(record: dict, preview_key: str):
+    """
+    预览删除操作
+
+    Args:
+        record: 学习记录数据
+        preview_key: session_state中存储预览数据的key
+    """
+    decision_id = record.get('decision_id')
+
+    if not decision_id:
+        # 旧记录，无需预览ChromaDB
+        st.session_state[preview_key] = {
+            "is_legacy": True,
+            "preview": {},
+            "total_records": 0
+        }
+        return
+
+    try:
+        from tradingagents.default_config import DEFAULT_CONFIG
+        learning_mgr = LearningRecordManager()
+
+        # 获取ChromaDB删除预览
+        preview_result = learning_mgr.preview_chromadb_deletion(decision_id, DEFAULT_CONFIG)
+
+        st.session_state[preview_key] = preview_result
+
+    except Exception as e:
+        st.error(f"预览失败: {str(e)}")
+        st.session_state[preview_key] = {
+            "error": str(e),
+            "preview": {},
+            "total_records": 0
+        }
+
+
+def _execute_deletion(record: dict):
+    """
+    执行删除操作
+
+    Args:
+        record: 学习记录数据
+    """
+    try:
+        from tradingagents.default_config import DEFAULT_CONFIG
+        learning_mgr = LearningRecordManager()
+
+        # 执行完整删除
+        result = learning_mgr.delete_learning_record_complete(
+            record['file_path'],
+            DEFAULT_CONFIG
+        )
+
+        if result.get('success'):
+            st.success(result.get('message', '✅ 删除成功'))
+
+            # 显示详细结果
+            if not result.get('is_legacy'):
+                with st.expander("📊 删除详情", expanded=False):
+                    deletion_details = result.get('deletion_details', {})
+                    for comp_name, comp_data in deletion_details.items():
+                        deleted = comp_data.get('deleted', 0)
+                        if deleted > 0:
+                            st.write(f"• {comp_name}: 删除 {deleted} 条记录")
+
+            # 清除缓存
+            st.cache_data.clear()
+
+        else:
+            st.error(f"❌ 删除失败: {result.get('error')}")
+
+    except Exception as e:
+        st.error(f"❌ 删除过程出错: {str(e)}")

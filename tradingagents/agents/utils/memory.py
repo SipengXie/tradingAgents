@@ -88,8 +88,14 @@ class FinancialSituationMemory:
             logger.exception(f"Failed to create embedding: {e}")
             return None
 
-    def add_situations(self, situations_and_advice):
-        """Add financial situations and their corresponding advice. Parameter is a list of tuples (situation, rec)"""
+    def add_situations(self, situations_and_advice, extra_metadata=None):
+        """
+        Add financial situations and their corresponding advice.
+
+        Args:
+            situations_and_advice: List of tuples (situation, recommendation)
+            extra_metadata: Optional dict with additional metadata (e.g., {"decision_id": "uuid"})
+        """
 
         situations = []
         advice = []
@@ -104,9 +110,18 @@ class FinancialSituationMemory:
             ids.append(str(offset + i))
             embeddings.append(self.get_embedding(situation))
 
+        # 构建metadata列表
+        metadatas = []
+        for rec in advice:
+            metadata = {"recommendation": rec}
+            # 如果提供了额外的metadata，合并进去
+            if extra_metadata:
+                metadata.update(extra_metadata)
+            metadatas.append(metadata)
+
         self.situation_collection.add(
             documents=situations,
-            metadatas=[{"recommendation": rec} for rec in advice],
+            metadatas=metadatas,
             embeddings=embeddings,
             ids=ids,
         )

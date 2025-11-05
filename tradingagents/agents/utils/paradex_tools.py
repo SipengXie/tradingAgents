@@ -254,17 +254,25 @@ class ParadexDataManager:
         """分析交易历史数据"""
         if not fills:
             return {"message": "暂无交易记录"}
-            
+
         # 基础统计
         total_trades = len(fills)
         buy_trades = sum(1 for fill in fills if fill.get('side', '').lower() == 'buy')
         sell_trades = total_trades - buy_trades
-        
+
+        # 新增：区分开仓和平仓交易
+        opening_trades = 0  # 开仓交易数量
+        closing_trades = 0  # 平仓交易数量
+        opening_buy = 0     # 开多仓（买入开仓）
+        opening_sell = 0    # 开空仓（卖出开仓）
+        closing_buy = 0     # 平空仓（买入平仓）
+        closing_sell = 0    # 平多仓（卖出平仓）
+
         # 按交易对统计
         symbol_stats = {}
         total_realized_pnl = 0.0
         total_fees = 0.0
-        
+
         for fill in fills:
             symbol = fill.get('market', 'Unknown')
             side = fill.get('side', 'Unknown')
@@ -272,37 +280,68 @@ class ParadexDataManager:
             price = float(fill.get('price', 0))
             fee = float(fill.get('fee', 0))
             pnl = fill.get('realized_pnl')
-            
+
+            # 判断是否为平仓交易（关键：realized_pnl != 0 表示平仓）
+            is_closing = False
+            if pnl and pnl != 'N/A':
+                try:
+                    pnl_value = float(pnl)
+                    if pnl_value != 0:
+                        is_closing = True
+                        closing_trades += 1
+                        if side.lower() == 'buy':
+                            closing_buy += 1  # 买入平仓 = 平空仓
+                        else:
+                            closing_sell += 1  # 卖出平仓 = 平多仓
+                    total_realized_pnl += pnl_value
+                except:
+                    pass
+
+            if not is_closing:
+                opening_trades += 1
+                if side.lower() == 'buy':
+                    opening_buy += 1  # 买入开仓 = 开多仓
+                else:
+                    opening_sell += 1  # 卖出开仓 = 开空仓
+
             if symbol not in symbol_stats:
                 symbol_stats[symbol] = {
                     'trades': 0,
                     'volume': 0.0,
                     'buy_trades': 0,
-                    'sell_trades': 0
+                    'sell_trades': 0,
+                    'opening_trades': 0,
+                    'closing_trades': 0
                 }
-            
+
             symbol_stats[symbol]['trades'] += 1
             symbol_stats[symbol]['volume'] += size
-            
+
             if side.lower() == 'buy':
                 symbol_stats[symbol]['buy_trades'] += 1
             else:
                 symbol_stats[symbol]['sell_trades'] += 1
-                
+
+            if is_closing:
+                symbol_stats[symbol]['closing_trades'] += 1
+            else:
+                symbol_stats[symbol]['opening_trades'] += 1
+
             total_fees += fee
-            if pnl and pnl != 'N/A':
-                try:
-                    total_realized_pnl += float(pnl)
-                except:
-                    pass
-        
+
         # 获取最活跃的交易对
         most_active = max(symbol_stats.items(), key=lambda x: x[1]['trades']) if symbol_stats else None
-        
+
         return {
             "total_trades": total_trades,
             "buy_trades": buy_trades,
             "sell_trades": sell_trades,
+            "opening_trades": opening_trades,
+            "closing_trades": closing_trades,
+            "opening_buy": opening_buy,      # 开多仓
+            "opening_sell": opening_sell,    # 开空仓
+            "closing_buy": closing_buy,      # 平空仓（买入平仓）
+            "closing_sell": closing_sell,    # 平多仓（卖出平仓）
             "total_realized_pnl": total_realized_pnl,
             "total_fees": total_fees,
             "unique_symbols": len(symbol_stats),
@@ -475,44 +514,86 @@ def format_trading_history_for_trader(history_data: Dict[str, Any]) -> str:
     """为交易员智能体格式化交易历史数据"""
     if history_data.get("error"):
         return f"⚠️ Paradex 交易历史获取失败: {history_data['error']}"
-    
+
     if not history_data.get("success"):
         return "⚠️ 无法获取 Paradex 交易历史"
-    
+
     result = "=== 📈 Paradex 交易历史分析 ===\n"
-    
+
     analysis = history_data.get("analysis", {})
     total_trades = analysis.get("total_trades", 0)
-    
+
     if total_trades == 0:
         result += "📭 最近无交易记录\n"
     else:
         buy_trades = analysis.get("buy_trades", 0)
         sell_trades = analysis.get("sell_trades", 0)
+        opening_trades = analysis.get("opening_trades", 0)
+        closing_trades = analysis.get("closing_trades", 0)
+        opening_buy = analysis.get("opening_buy", 0)
+        opening_sell = analysis.get("opening_sell", 0)
+        closing_buy = analysis.get("closing_buy", 0)
+        closing_sell = analysis.get("closing_sell", 0)
         realized_pnl = analysis.get("total_realized_pnl", 0)
         total_fees = analysis.get("total_fees", 0)
         most_active = analysis.get("most_active_symbol", "N/A")
-        
+
         result += f"📊 交易统计:\n"
         result += f"• 总交易数: {total_trades} 笔\n"
         result += f"• 买入/卖出: {buy_trades}/{sell_trades} 笔\n"
+        result += f"\n"
+        result += f"🔍 **交易类型详细分析**（关键！）:\n"
+        result += f"• 开仓交易: {opening_trades} 笔\n"
+        result += f"  - 开多仓（买入开仓）: {opening_buy} 笔\n"
+        result += f"  - 开空仓（卖出开仓）: {opening_sell} 笔\n"
+        result += f"• 平仓交易: {closing_trades} 笔\n"
+        result += f"  - 平空仓（买入平仓）: {closing_buy} 笔\n"
+        result += f"  - 平多仓（卖出平仓）: {closing_sell} 笔\n"
+        result += f"\n"
+        result += f"⚠️ **重要提示**: \n"
+        result += f"  - 买入平仓（平空仓）产生盈利 → 说明之前做空策略正确\n"
+        result += f"  - 卖出平仓（平多仓）产生盈利 → 说明之前做多策略正确\n"
+        result += f"  - 平仓交易的盈亏反映的是开仓时的方向决策是否正确\n"
+        result += f"\n"
         result += f"• 已实现盈亏: {realized_pnl:+.2f} USDC\n"
         result += f"• 总手续费: {total_fees:.2f} USDC\n"
         result += f"• 最活跃品种: {most_active}\n\n"
-        
-        # 显示最近几笔交易
+
+        # 显示最近几笔交易（增强版，显示交易类型）
         recent_trades = history_data.get("recent_trades", [])
         if recent_trades:
-            result += "【最近交易】\n"
+            result += "【最近交易详情】\n"
             for i, trade in enumerate(recent_trades[:3], 1):
                 timestamp = datetime.fromtimestamp(int(trade.get('created_at', 0)) / 1000)
                 symbol = trade.get('market', 'Unknown')
                 side = trade.get('side', 'Unknown')
                 size = trade.get('size', '0')
                 price = trade.get('price', '0')
-                
-                result += f"{i}. {timestamp.strftime('%m-%d %H:%M')} {symbol} {side} {size} @ {price}\n"
-    
+                pnl = trade.get('realized_pnl')
+
+                # 判断交易类型
+                trade_type = "开仓"
+                trade_detail = ""
+                if pnl and pnl != 'N/A':
+                    try:
+                        pnl_value = float(pnl)
+                        if pnl_value != 0:
+                            trade_type = "平仓"
+                            if side.upper() == 'BUY':
+                                trade_detail = f"（平空仓，PnL: {pnl_value:+.2f}）"
+                            else:
+                                trade_detail = f"（平多仓，PnL: {pnl_value:+.2f}）"
+                    except:
+                        pass
+
+                if not trade_detail:
+                    if side.upper() == 'BUY':
+                        trade_detail = "（开多仓）"
+                    else:
+                        trade_detail = "（开空仓）"
+
+                result += f"{i}. {timestamp.strftime('%m-%d %H:%M')} {symbol} {side} {size} @ {price} {trade_detail}\n"
+
     result += f"\n🕒 数据时间: {history_data.get('timestamp', 'N/A')}\n"
     return result
 
